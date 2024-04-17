@@ -1,0 +1,8 @@
+*.pkl
+*.out
+*.debug
+*.swp
+
+**/__pycache__/
+
+keybert/
