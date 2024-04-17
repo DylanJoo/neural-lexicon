@@ -14,7 +14,7 @@ def add_extracted_spans(
     batch_size=64, 
     max_doc_length=384,
     ngram_range=(2,2),
-    top_k_spans=1,
+    top_k_spans=5,
     bos_id=101,
     eos_id=102
 ):
@@ -45,7 +45,7 @@ def add_extracted_spans(
                         doc_embedding.reshape(1, -1), candidate_embeddings
                 )
                 key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
-                extracted_spans.extend(key_spans)
+                extracted_spans.append(key_spans)
     return extracted_spans
 
 def calculate_span_embeddings(
