@@ -10,6 +10,9 @@ class BERTEncoder:
         self.model.to(self.device)
         self.pooling = pooling
 
+    def set_model(self, model_obj):
+        self.model = model_obj.eval()
+
     def encode(self, input_ids, attention_mask=None, **kwargs):
         embeddings = self.model(
                 input_ids=input_ids, 

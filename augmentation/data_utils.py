@@ -11,7 +11,7 @@ def randomcrop(x, ratio_min, ratio_max):
     length = int(len(x) * ratio)
     start = random.randint(0, len(x) - length)
     end = start + length
-    crop = x[start:end].clone()
+    crop = x[start:end]
     return crop
 
 
@@ -84,12 +84,12 @@ def add_bos_eos(x, bos_token_id, eos_token_id):
     if not isinstance(x, torch.Tensor):
         x = torch.Tensor(x)
     if x.dim() == 1:
-        x = torch.cat([torch.tensor([bos_token_id]), x.clone().detach(), torch.tensor([eos_token_id])])
+        x = torch.cat([torch.Tensor([bos_token_id]), x.clone().detach(), torch.Tensor([eos_token_id])])
     else:
         x = torch.cat([
-            torch.tensor([[bos_token_id]] * x.size(0)),
+            torch.Tensor([[bos_token_id]] * x.size(0)),
             x.clone().detach(), 
-            torch.tensor([[eos_token_id]] * x.size(0)),
+            torch.Tensor([[eos_token_id]] * x.size(0)),
         ], dim=-1)
     return x
 

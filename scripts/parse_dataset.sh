@@ -12,14 +12,14 @@
 source ${HOME}/.bashrc
 conda activate exa-dm_env
 
-FILE=${HOME}/datasets/beir/scidocs/collection/corpus.jsonl
+cd ../
 
-for dataset in trec-covid;do
-        python preprocess/tokenization.py \
-            --tokenizer bert-base-uncased \
-            --datapath ${FILE} \
-            --overwrite \
-            --outdir removeme_dir
-
+for dataset in trec-covid scidocs scifact;do
+    mkdir -p parsed/${dataset}
+    python preprocess/tokenization.py \
+        --tokenizer bert-base-uncased \
+        --datapath ${HOME}/datasets/beir/${dataset}/collection/corpus.jsonl \
+        --overwrite \
+        --outdir parsed/${dataset}
     echo done
 done

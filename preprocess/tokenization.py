@@ -4,6 +4,7 @@ import os
 import argparse
 import torch
 import json
+from tqdm import tqdm
 
 from transformers import AutoTokenizer
 

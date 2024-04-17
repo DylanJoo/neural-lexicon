@@ -1,20 +1,25 @@
-import torch
-from span import *
-from encoders import BERTEncoder
+from dataset import load_dataset
+from ind_cropping.options import DataOptions
+
+model_name='thenlper/gte-base'
 from transformers import AutoTokenizer
-
-model_name='sentence-transformers/all-MiniLM-L6-v2'
-# model_name='thenlper/gte-base'
-model_name='facebook/contriever-msmarco'
-encoder = BERTEncoder(model_name)
-documents = torch.load('../corpus.jsonl.pkl')
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.bos_token = '[CLS]'
+tokenizer.eos_token = '[SEP]'
 
-spans = add_extracted_spans(documents[:2], encoder, ngram_range=(2,3), top_k_spans=5)
-for i, span_scores in enumerate(spans):
-    print(tokenizer.decode(documents[i]))
-    print()
-    for span, score in span_scores:
-        print(tokenizer.decode(span), score)
-    print()
+from encoders import BERTEncoder
+encoder = BERTEncoder(model_name, device='cuda')
 
+data_opt = DataOptions(train_data_dir='/home/dju/neural-lexicon/parsed/scifact')
+dataset = load_dataset(data_opt, tokenizer)
+dataset.get_spans(encoder)
+
+for i, d in enumerate(dataset):
+    print(tokenizer.decode(d['q_tokens'].long()))
+    print(tokenizer.decode(d['c_tokens'].long()))
+    print(tokenizer.decode(d['span_tokens'].long()))
+    if i > 2:
+        break
+
+dataset.save(f'/home/dju/datasets/test_collection/scifact/train.pt')
+print('done')
