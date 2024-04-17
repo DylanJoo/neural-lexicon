@@ -8,28 +8,28 @@ import glob
 import logging
 import random
 import torch
-from data_utils import *
-
-from span import add_extracted_spans
+from .data_utils import *
+from .span_utils import add_extracted_spans
 
 logger = logging.getLogger(__name__)
 
 def load_dataset(opt, tokenizer):
-    datasets = {}
-    # [TODO] check the other loading mode, maybe put the pre-extraced here.
-    if opt.loading_mode == "full": 
+    if opt.loading_mode == "from_scratch": 
         files = glob.glob(os.path.join(opt.train_data_dir, "*.pkl"))
-    elif opt.loading_mode == "full_with_spans": 
-        files = glob.glob(os.path.join(opt.train_data_dir, "*.pt"))
+        assert len(files) == 1, 'more than one files'
+        list_of_token_ids = torch.load(files[0], map_location="cpu")
+        return DocwiseIndCropping(list_of_token_ids, opt.chunk_length, tokenizer, opt)
 
-    assert len(files) == 1, 'more than one files'
-    list_of_token_ids = torch.load(files[0], map_location="cpu")
-    return DocwiseIndCropping(list_of_token_ids, opt.chunk_length, tokenizer, opt)
+    elif opt.loading_mode == "from_pt": 
+        files = glob.glob(os.path.join(opt.train_data_dir, "*.pt"))
+        assert len(files) == 1, 'more than one files'
+        return torch.load(files[0], map_location="cpu")
+
 
 class DocwiseIndCropping(torch.utils.data.Dataset):
 
-    def __init__(self, documents, chunk_length, tokenizer, opt, ngram_range=None):
-        self.documents = [d for d in documents if len(d) >= chunk_length][:10]
+    def __init__(self, documents, chunk_length, tokenizer, opt):
+        self.documents = [d for d in documents if len(d) >= chunk_length]
         self.chunk_length = chunk_length
         self.tokenizer = tokenizer
         self.opt = opt
@@ -37,16 +37,22 @@ class DocwiseIndCropping(torch.utils.data.Dataset):
 
         # span arguments
         self.spans = None
-        self.ngram_range = ngram_range
 
-    def get_update_spans(self, encoder):
+    def get_update_spans(
+        self,
+        encoder, 
+        batch_size=64, 
+        max_doc_length=256, 
+        ngram_range=(2,3), 
+        top_k_spans=5
+    ):
         self.spans = add_extracted_spans(
                 documents=self.documents,
                 encoder=encoder,
-                batch_size=64,
-                max_doc_length=256,
-                ngram_range=(2,3),
-                top_k_spans=5,
+                batch_size=batch_size,
+                max_doc_length=max_doc_length,
+                ngram_range=ngram_range,
+                top_k_spans=top_k_spans,
                 bos_id=self.tokenizer.bos_token_id,
                 eos_id=self.tokenizer.eos_token_id
         )
@@ -54,11 +60,9 @@ class DocwiseIndCropping(torch.utils.data.Dataset):
     def __len__(self):
         return len(documents)
 
-    def save(self, path):
-        if not os.path.exists(os.path.dirname(path)):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        with open(path, 'wb') as fout:
+    def save(self, filename):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, 'wb') as fout:
             torch.save(self, fout)
         print('saved') 
 
