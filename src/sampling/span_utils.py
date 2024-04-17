@@ -6,7 +6,7 @@ import numpy as np
 from nltk.util import ngrams
 from sklearn.metrics.pairwise import cosine_similarity
 
-from data_utils import add_bos_eos, build_mask
+from .data_utils import add_bos_eos, build_mask
 
 def add_extracted_spans(
     documents, 

@@ -28,8 +28,11 @@ class BertEmbeddings(BertModel):
 
     @staticmethod
     def _mean_pooling(token_embeddings, attention_mask):
-        last_hidden = token_embeddings.masked_fill(~attention_mask[..., None].bool(), 0.0)
-        return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+        if attention_mask is not None:
+            last_hidden = token_embeddings.masked_fill(~attention_mask[..., None].bool(), 0.0)
+            return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+        else:
+            return last_hidden.mean(dim=1)
 
     def forward(self, input_ids, attention_mask, pooling, **kwargs):
         model_output = super().forward(
@@ -44,7 +47,7 @@ class BertEmbeddings(BertModel):
         if pooling == 'cls':
             emb = last_hidden[:, 0]
         elif pooling == 'mean':
-            emb = last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
+            emb = self._mean_pooling(last_hidden, attention_mask)
 
         return emb
 
