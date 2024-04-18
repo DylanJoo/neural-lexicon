@@ -16,11 +16,11 @@ TEMP=${HOME}/datasets/temp
 cd ${HOME}/neural-lexicon/
 
 for dataset in trec-covid scidocs scifact;do
-    mkdir -p ${TEMP}/${dataset}/full
+    mkdir -p ${TEMP}/${dataset}/
     python preprocess/tokenization.py \
         --tokenizer bert-base-uncased \
         --datapath ${HOME}/datasets/beir/${dataset}/collection/corpus.jsonl \
         --overwrite \
-        --outdir ${TEMP}/${dataset}/full
+        --outdir ${TEMP}/${dataset}
     echo done
 done

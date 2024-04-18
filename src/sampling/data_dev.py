@@ -1,9 +1,3 @@
-"""
-Baseline: 
-    X. Independant cropping: positive sampling. length-wise, dataset-wise
-    1. Document-wise independent cropping: positive sampling, document-wise
-    2. Document-wise independent cropping: plus in-document negative samples
-"""
 import os
 import glob
 import logging
@@ -11,28 +5,28 @@ import random
 import datetime
 import torch
 
-from .data_utils import *
-from .span_utils import add_extracted_spans
+from .data import DocwiseIndCropping
 from .cluster_utils import FaissKMeans
 
 logger = logging.getLogger(__name__)
 
 def load_dataset(opt, tokenizer):
     if opt.loading_mode == "from_scratch": 
-        files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*.pkl"))
+        files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*pkl"))
         assert len(files) == 1, 'more than one files'
         list_of_token_ids = torch.load(files[0], map_location="cpu")
         return ClusteredIndCropping(list_of_token_ids, opt.chunk_length, tokenizer, opt)
+
     elif opt.loading_mode == "from_precomputed": 
         files = glob.glob(os.path.join(opt.train_data_dir, "*.pt"))
         assert len(files) == 1, 'more than one files'
         return torch.load(files[0], map_location="cpu")
 
 
-class ClusteredIndCropping(torch.utils.data.Dataset):
+class ClusteredIndCropping(DocwiseIndCropping):
 
     def __init__(self, documents, chunk_length, tokenizer, opt):
-        self.documents = [d for d in documents if len(d) >= chunk_length]
+        self.documents = [d for d in documents if len(d) >= chunk_length][:10]
         self.chunk_length = chunk_length
         self.tokenizer = tokenizer
         self.opt = opt
@@ -105,38 +99,3 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         logger.info("Latency of cluster ({} documents {} clusters): {:.2f}ms".format(embeddings.shape[0], n_clusters, time_taken))
 
         return 0
-
-    def _select_random_spans(self, index):
-        candidates, scores = list(zip(*self.spans[index]))
-        span_tokens = random.choices(candidates, weights=scores, k=1)[0]
-        span_tokens = add_bos_eos(span_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id)
-        return span_tokens
-
-    def __getitem__(self, index):
-        document = self.documents[index] # the crop is belong to one doc
-        start_idx = random.randint(0, len(document) - self.chunk_length - 1)
-        end_idx = start_idx + self.chunk_length 
-        tokens = document[start_idx:end_idx] 
-
-        # fine the closest anchor of this span
-        q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
-        c_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
-        q_tokens = apply_augmentation(q_tokens, self.opt)
-        c_tokens = apply_augmentation(c_tokens, self.opt)
-        q_tokens = add_bos_eos(q_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id)
-        c_tokens = add_bos_eos(c_tokens, self.tokenizer.bos_token_id, self.tokenizer.eos_token_id)
-
-        if self.spans is not None:
-            span_tokens = self._select_random_spans(index)
-            return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens}
-        else:
-            return {"q_tokens": q_tokens, "c_tokens": c_tokens}
-
-    def __len__(self):
-        return len(documents)
-
-    def save(self, filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'wb') as fout:
-            torch.save(self, fout)
-

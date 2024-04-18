@@ -1,8 +1,9 @@
 import torch
-from cluster_utils import add_extracted_spans
 from encoders import BERTEncoder
 from transformers import AutoTokenizer
 
+from span_utils import add_extracted_spans
+from cluster_utils import FaissKMeans
 
 device = 'cuda'
 device = 'cpu'
@@ -25,15 +26,6 @@ spans, all_doc_embeddings = add_extracted_spans(
     return_doc_embeddings=True
 )
 
-# for i, span_scores in enumerate(spans):
-#     print(tokenizer.decode(documents[i]))
-#     print()
-#     for span, score in span_scores:
-#         print(tokenizer.decode(span), score)
-#     print()
-print(all_doc_embeddings.shape)
-
-from cluster_utils import FaissKMeans
-
 kmeans = FaissKMeans(n_clusters=3, device=device)
 kmeans.fit(all_doc_embeddings)
+# print(kmeans.assign(all_doc_embeddings))
