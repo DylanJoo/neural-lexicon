@@ -6,7 +6,8 @@ import numpy as np
 from nltk.util import ngrams
 from sklearn.metrics.pairwise import cosine_similarity
 
-from .data_utils import add_bos_eos, build_mask
+from .data_utils import add_bos_eos, build_mask # integrate
+# from data_utils import add_bos_eos, build_mask # unit
 
 def add_extracted_spans(
     documents, 
@@ -16,9 +17,11 @@ def add_extracted_spans(
     ngram_range=(2,2),
     top_k_spans=5,
     bos_id=101,
-    eos_id=102
+    eos_id=102,
+    return_doc_embeddings=False
 ):
     with torch.no_grad():
+        all_doc_embeddings = []
         extracted_spans = []
 
         for batch_docs in tqdm(batch_iterator(documents, batch_size), \
@@ -30,6 +33,10 @@ def add_extracted_spans(
 
             batch_doc_embeddings = encoder.encode(tokens, mask)
             batch_doc_embeddings = batch_doc_embeddings.detach().cpu()
+
+            ### additional record doc embeddings
+            if return_doc_embeddings:
+                all_doc_embeddings.append(batch_doc_embeddings)
 
             ## build the ngram candidate set
             X, candidate_span_mapping = get_candidate_spans(batch_docs, ngram_range)
@@ -46,7 +53,11 @@ def add_extracted_spans(
                 )
                 key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
                 extracted_spans.append(key_spans)
-    return extracted_spans
+
+    if return_doc_embeddings:
+        return extracted_spans, torch.cat(all_doc_embeddings, dim=0).numpy()
+    else:
+        return (extracted_spans, )
 
 def calculate_span_embeddings(
     ngram_mapping, 

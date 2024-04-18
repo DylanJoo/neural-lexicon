@@ -6,32 +6,36 @@ from transformers import HfArgumentParser
 from transformers import AutoTokenizer
 from dataclasses import asdict
 
-from src.trainers import TrainerBase
-from src.options import ModelOptions, DataOptions, TrainOptions
-from src.sampling.data import load_dataset
-from src.sampling.collators import Collators
+from trainers import TrainerBase
 
-os.environ['WANDB_PROJECT'] = 'SSLDR-span-learn'
+from ind_cropping.options import ModelOptions, DataOptions, TrainOptions
+from ind_cropping.data import load_dataset, Collator
+
+os.environ['WANDB_PROJECT'] = 'SSL4LEDR'
 
 def main():
 
     parser = HfArgumentParser((ModelOptions, DataOptions, TrainOptions))
     model_opt, data_opt, train_opt = parser.parse_args_into_dataclasses()
 
+    # change project if needed
     if train_opt.wandb_project:
         os.environ["WANDB_PROJECT"] = train_opt.wandb_project
 
-    # [Model] tokenizer
+    # [Model] tokenizer, model architecture (with bi-encoders)
     tokenizer = AutoTokenizer.from_pretrained(model_opt.tokenizer_name or model_opt.model_name)
     tokenizer.bos_token = '[CLS]'
     tokenizer.eos_token = '[SEP]'
-
-    # [Model] model architecture (encoders and bi-encoder framework)
     from models import Contriever
-    from models import InBatchLateInteraction
 
-    encoder = Contriever.from_pretrained(
-            model_opt.model_name, 
+    if 'span' in train_opt.output_dir:
+        from models.inbatch import InBatchWithSpan as InBatch
+    elif model_opt.late_interaction:
+        from models import LateInteraction as InBatch
+    else:
+        from models import InBatch
+
+    encoder = Contriever.from_pretrained(model_opt.model_name, 
             add_pooling_layer=model_opt.add_pooling_layer,
             pooling=model_opt.pooling,
             span_pooling=model_opt.span_pooling,
@@ -43,11 +47,8 @@ def main():
     )
     
     # [Data] train/eval datasets, collator, preprocessor
-    from augmentation.data import load_dataset
     train_dataset = load_dataset(data_opt, tokenizer)
     eval_dataset = None
-
-    from augmentation.collators import 
     collator = Collator(opt=data_opt)
 
     trainer = TrainerBase(
