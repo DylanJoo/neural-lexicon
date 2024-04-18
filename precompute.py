@@ -22,6 +22,7 @@ for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
     dataset = load_dataset(data_opt, tokenizer)
 
     ## [span extraction]
+    K=10
     # this can be updated anytime
     doc_embeddings = dataset.get_update_spans(
             encoder,
@@ -33,14 +34,15 @@ for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
     )
 
     ## [clustering]
-    dataset.get_update_clusters(
+    N=0.1
+    N = dataset.get_update_clusters(
             doc_embeddings, 
-            n_clusters=3, 
+            n_clusters=N,
             device=device
     )
 
     ## [save and load (testing)]
-    dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.10.clusuter.3.pt')
+    dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.{K}.clusuter.{N}.pt')
     data_opt.loading_mode='from_precomputed'
     dataset = load_dataset(data_opt, tokenizer)
 

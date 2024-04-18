@@ -104,7 +104,7 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         time_taken = (end - start).total_seconds() * 1000
         logger.info("Latency of cluster ({} documents {} clusters): {:.2f}ms".format(embeddings.shape[0], n_clusters, time_taken))
 
-        return 0
+        return n_clusters
 
     def _select_random_spans(self, index):
         candidates, scores = list(zip(*self.spans[index]))

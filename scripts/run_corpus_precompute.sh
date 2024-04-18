@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=gen-sp
+#SBATCH --job-name=precompute
 #SBATCH --partition gpu
 #SBATCH --gres=gpu:nvidia_titan_v:1
 #SBATCH --mem=15G
@@ -14,4 +14,4 @@ conda activate exa-dm_env
 
 cd ${HOME}/neural-lexicon
 
-python span_pregeneration.py
+python precompute.py
