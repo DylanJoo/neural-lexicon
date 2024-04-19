@@ -83,7 +83,7 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         """
         # TAS-B exps on MARCO was set default to 5%
         if isinstance(n_clusters, float):
-            n_clusters = int(self.__len__ * 0.05)
+            n_clusters = len(self.documents) * 0.05
 
         # [TODO] see if need shrinking it
         if cluster_args.pop('max_docs', False):
