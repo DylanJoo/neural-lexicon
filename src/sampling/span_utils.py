@@ -10,8 +10,8 @@ from .data_utils import add_bos_eos, build_mask # integrate
 # from data_utils import add_bos_eos, build_mask # unit
 
 def add_extracted_spans(
-    documents, 
     encoder, 
+    documents, 
     batch_size=64, 
     max_doc_length=384,
     ngram_range=(2,2),
@@ -87,9 +87,10 @@ def get_candidate_spans(docs, ngram_range):
     j_indices, indptr = [], [0]
 
     for doc in docs:
-        feature_set = [ngram_tuple for n in \
+        # remove the redundant ngrams
+        feature_set = set([ngram_tuple for n in \
                 range(ngram_range[0], ngram_range[1]+1) for ngram_tuple in \
-                ngrams(doc, n)]
+                ngrams(doc, n)])
 
         # create a map to collect feature (ngram token indices)
         feature_indices = []

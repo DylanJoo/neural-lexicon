@@ -3,10 +3,11 @@
 import faiss
 
 class FaissKMeans:
-    def __init__(self, n_clusters=8, n_init=10, max_iter=300, device='cpu'):
+    def __init__(self, n_clusters=8, n_init=10, max_iter=300, min_points_per_centroid=32, device='cpu'):
         self.n_clusters = n_clusters
         self.n_init = n_init
         self.max_iter = max_iter
+        self.min_points_per_centroid = min_points_per_centroid
         self.kmeans = None
 
         self.gpu = False if device == 'cpu' else True
@@ -15,7 +16,8 @@ class FaissKMeans:
         self.kmeans = faiss.Kmeans(d=X.shape[1],
                                    k=self.n_clusters,
                                    niter=self.max_iter,
-                                   nredo=self.n_init)
+                                   nredo=self.n_init, 
+                                   min_points_per_centroid=self.min_points_per_centroid)
         # self.kmeans.train(X.astype(np.float32))
         self.kmeans.train(X)
         self.cluster_centers_ = self.kmeans.centroids

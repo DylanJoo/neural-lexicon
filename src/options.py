@@ -16,19 +16,18 @@ class ModelOptions:
     norm_doc: Optional[bool] = field(default=False)
     norm_query: Optional[bool] = field(default=False)
     norm_spans: Optional[bool] = field(default=False)
-    output_span: Optional[bool] = field(default=False)
+    # output_span: Optional[bool] = field(default=False)
     # Lexical-enhanced: span
     temperature: Optional[float] = field(default=1.0)
     temperature_span: Optional[float] = field(default=1.0)
-    span_sent_interaction: Optional[str] = field(default='no')
-    span_span_interaction: Optional[bool] = field(default=False)
+    # span_span_interaction: Optional[bool] = field(default=False)
     # Lexical-enhanced: multivec
-    late_interaction: Optional[bool] = field(default=False)
+    # late_interaction: Optional[bool] = field(default=False)
     # Objective weights
     alpha: float = field(default=1.0)
-    beta: float = field(default=0.0)
-    gamma: float = field(default=0.0)
-    delta: float = field(default=0.0)
+    beta: float = field(default=0.5) # since it's bidirectional
+    # gamma: float = field(default=0.0)
+    # delta: float = field(default=0.0)
 
 @dataclass
 class DataOptions:
@@ -41,6 +40,7 @@ class DataOptions:
     ratio_max: Optional[float] = field(default=0.5)
     augmentation: Optional[str] = field(default=None)
     prob_augmentation: Optional[float] = field(default=0.0)
+    select_span_mode: Optional[str] = field(default='no')
 
 @dataclass
 class TrainOptions(TrainingArguments):
@@ -52,7 +52,7 @@ class TrainOptions(TrainingArguments):
     max_steps: int = field(default=-1)
     num_train_epochs: int = field(default=3)
     save_strategy: str = field(default='steps')
-    save_steps: int = field(default=2000)
+    save_steps: int = field(default=1000)
     eval_steps: int = field(default=1000)
     warmup_ratio: float = field(default=0.0)
     warmup_steps: int = field(default=0)
@@ -69,3 +69,4 @@ class TrainOptions(TrainingArguments):
     dataloader_prefetch_factor: int = field(default=2)
     fp16: bool = field(default=False)
     wandb_project: Optional[str] = field(default=None)
+    do_tas_doc: Optional[bool] = field(default=False)
