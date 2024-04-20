@@ -1,8 +1,8 @@
 import torch
 from src.sampling.encoders import BERTEncoder
 from transformers import AutoTokenizer
-from src.options import DataOptions
 
+from src.options import DataOptions
 from src.sampling.data import load_dataset
 
 device='cuda'
@@ -12,7 +12,8 @@ tokenizer.bos_token = '[CLS]'
 tokenizer.eos_token = '[SEP]'
 encoder = BERTEncoder(model_name, device=device)
 
-for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
+# for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
+for dataset_name in ['scifact', 'scidocs']:
     # setup for ind-cropping
     data_opt = DataOptions(
             train_data_dir=f'/home/dju/datasets/temp/{dataset_name}', 
@@ -34,15 +35,15 @@ for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
     )
 
     ## [clustering]
-    N=0.1
-    N = dataset.get_update_clusters(
+    N_used = dataset.get_update_clusters(
             doc_embeddings, 
-            n_clusters=N,
+            n_clusters=0.05,
+            min_points_per_centroid=32,
             device=device
     )
 
     ## [save and load (testing)]
-    dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.{K}.clusuter.{N}.pt')
+    dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.{K}.clusuter.{N_used}.pt')
     data_opt.loading_mode='from_precomputed'
     dataset = load_dataset(data_opt, tokenizer)
 
