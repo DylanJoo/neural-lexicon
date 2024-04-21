@@ -1,7 +1,7 @@
 #!/bin/sh
-#SBATCH --job-name=precompute
+#SBATCH --job-name=compute
 #SBATCH --partition gpu
-#SBATCH --gres=gpu:nvidia_titan_v:1
+#SBATCH --gres=gpu:1
 #SBATCH --mem=15G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -14,4 +14,23 @@ conda activate exa-dm_env
 
 cd ${HOME}/neural-lexicon
 
-python precompute.py
+# python precompute.py \
+#     --encoder_name_or_path thenlper/gte-base \
+#     --tokenizer_name_or_path thenlper/gte-base \
+#     --num_spans 10 \
+#     --num_clusters 0.05 \
+#     --batch_size 128 \
+#     --saved_file_format 'doc.span.{}.cluster.{}.pt.strong' \
+#     --loading_mode from_strong_precomputed \
+#     --device cuda
+
+python precompute.py \
+    --encoder_name_or_path facebook/contriever \
+    --tokenizer_name_or_path facebook/contriever \
+    --num_spans 10 \
+    --num_clusters 0.05 \
+    --batch_size 64 \
+    --saved_file_format 'doc.span.{}.cluster.{}.pt' \
+    --loading_mode from_precomputed \
+    --faiss_output doc_emb_ \
+    --device cuda

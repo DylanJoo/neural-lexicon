@@ -46,6 +46,7 @@ class Contriever(BertModel):
         last_hidden_states = model_output["last_hidden_state"]
         last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
 
+        ## see if we need to separate sent and span pooling methods
         # sent/spana representation
         if self.config.pooling == 'cls':
             emb = last_hidden[:, 0]
