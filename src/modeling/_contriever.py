@@ -6,10 +6,9 @@ import torch.nn.functional as F
 from transformers import BertModel
 
 class Contriever(BertModel):
-    def __init__(self, config, add_pooling_layer=False, pooling='mean', span_pooling=None, **kwargs):
+    def __init__(self, config, add_pooling_layer=False, pooling='mean', **kwargs):
         super().__init__(config, add_pooling_layer=add_pooling_layer)
         self.config.pooling = pooling
-        self.config.span_pooling = span_pooling
         self.additional_log = {}
 
         ## add additional layers
@@ -28,6 +27,7 @@ class Contriever(BertModel):
         output_attentions=None,
         output_hidden_states=None,
         return_multi_vectors=False,
+        pooling=None
     ):
 
         model_output = super().forward(
@@ -46,11 +46,11 @@ class Contriever(BertModel):
         last_hidden_states = model_output["last_hidden_state"]
         last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
 
-        ## see if we need to separate sent and span pooling methods
-        # sent/spana representation
-        if self.config.pooling == 'cls':
+        pooling = (pooling or self.config.pooling)
+        # text representation
+        if pooling == 'cls':
             emb = last_hidden[:, 0]
-        elif self.config.pooling == 'mean':
+        elif pooling == 'mean':
             emb = last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
 
         # for colbert-like objective

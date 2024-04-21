@@ -13,7 +13,7 @@ class InBatchOutput(BaseModelOutput):
     logs: Optional[Dict[str, torch.FloatTensor]] = None
 
 class InBatchInteraction(nn.Module):
-    def __init__(self, opt, retriever, tokenizer, label_smoothing=False,):
+    def __init__(self, opt, retriever, tokenizer, label_smoothing=False):
         super().__init__()
 
         self.opt = opt
@@ -31,6 +31,10 @@ class InBatchInteraction(nn.Module):
         self.tau = opt.temperature
         self.tau_span = opt.temperature_span
 
+        ## additional projection layer
+        # hidden_size = retriever.config.hidden_size
+        # self.non_linear = nn.Sequential(nn.Linear(2*hidden_size, hidden_size), nn.Tanh())
+
     def forward(self, q_tokens, q_mask, c_tokens, c_mask, span_tokens=None, span_mask=None, **kwargs):
 
         bsz = len(q_tokens)
@@ -45,9 +49,14 @@ class InBatchInteraction(nn.Module):
         if self.norm_doc:
             cemb = F.normalize(cemb, p=2, dim=-1)
 
+        ## types of losses
+        CELoss = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+        KLLoss = nn.KLDivLoss(reduction='batchmean')
+        MSELoss = nn.MSELoss()
+
         logs = {}
         scores = torch.einsum("id, jd->ij", qemb / self.tau, cemb)
-        loss = torch.nn.functional.cross_entropy(scores, labels, label_smoothing=self.label_smoothing)
+        loss = CELoss(scores, labels)
 
         predicted_idx = torch.argmax(scores, dim=-1)
         accuracy = 100 * (predicted_idx == labels).float().mean()
@@ -56,22 +65,33 @@ class InBatchInteraction(nn.Module):
         loss_sp = 0.0
         ## query-span/context-span contrastive from doc-derived spans
         if span_tokens is not None and span_mask is not None:
-            spemb = self.encoder(input_ids=span_tokens, attention_mask=span_mask)[0]
+            spemb = self.encoder(
+                    input_ids=span_tokens,
+                    attention_mask=span_mask, 
+                    pooling=self.opt.span_pooling
+            )[0]
+
             if self.norm_spans:
                 spemb = F.normalize(spemb, p=2, dim=-1)
 
+            # span-conditioanl embeddings
+            # span embeddings
             scores_qsp = torch.einsum("id, jd->ij", qemb / self.tau_span, spemb)
             scores_csp = torch.einsum("id, jd->ij", cemb / self.tau_span, spemb)
-            loss_sp = F.cross_entropy(scores_qsp, labels, label_smoothing=self.label_smoothing) + \
-                    F.cross_entropy(scores_csp, labels, label_smoothing=self.label_smoothing)
+            loss_sp = (CELoss(scores_qsp, labels) + CELoss(scores_csp, labels)) / 2
 
             predicted_idx = torch.argmax(scores_qsp, dim=-1)
             accuracy_sp = 100 * (predicted_idx == labels).float().mean()
             logs.update({'loss_span': loss_sp, 'acc_span': accuracy_sp})
 
-        logs.update(self.encoder.additional_log)
-        loss = loss * self.opt.alpha + loss_sp * self.opt.beta
+            ## query-span-score vs. context-span-score distribution
+            target = F.softmax(scores_qsp, dim=1)
+            logits_spans = F.log_softmax(scores_csp, dim=1)
+            loss_distil = KLLoss(logits_spans, target)
+            logs.update({'loss_span_distil': loss_distil})
 
+        logs.update(self.encoder.additional_log)
+        loss = loss * self.opt.alpha + loss_sp * self.opt.beta + loss_distil * self.opt.gamma
         return InBatchOutput(loss=loss, acc=accuracy, logs=logs)
 
     def get_encoder(self):
@@ -93,7 +113,6 @@ class InBatchInteraction(nn.Module):
     #
     #     return {'loss': loss, 'acc': accuracy}
 
-
 class InBatchInteractionWithSpan(InBatchInteraction):
 
     def forward(self, q_tokens, q_mask, c_tokens, c_mask, span_tokens, span_mask, **kwargs):
@@ -102,7 +121,7 @@ class InBatchInteractionWithSpan(InBatchInteraction):
         labels = torch.arange(0, bsz, dtype=torch.long, device=q_tokens.device)
 
         # [objectives] 
-        CELoss = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
+        CELoss = nn.CrossEntropyLoss()
         KLLoss = nn.KLDivLoss(reduction='batchmean')
         MSELoss = nn.MSELoss()
 
