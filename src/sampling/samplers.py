@@ -37,7 +37,7 @@ class BinSampler(SequentialSampler):
             # random shuffle the indices in that cluster and draw
             np.random.shuffle(indices[idx_bin])
             batch = indices[idx_bin][:self.batch_size]
-            indices[idx_bin] = indices[idx_bin][self.batch_size:]
+            # indices[idx_bin] = indices[idx_bin][self.batch_size:]
             bin_counts[idx_bin] -= len(batch)
             yield from iter(batch)
 

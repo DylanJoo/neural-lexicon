@@ -14,6 +14,29 @@ def randomcrop(x, ratio_min, ratio_max):
     crop = x[start:end]
     return crop
 
+def span_randomcrop(x, y, ratio_min, ratio_max, x_old):
+
+    ratio = random.uniform(ratio_min, ratio_max)
+    length = int(len(x_old) * ratio)
+
+    start = random.randint(0, len(x) - length)
+    end = start + length
+
+    start_bound = x.index(y[0])
+    end_bound = x.index(y[-1])
+
+    if start <= start_bound:
+        if end >= end_bound:
+            pass
+        else:
+            end = end_bound
+        crop = x[start:end][:length]
+    else:
+        start = start_bound
+        crop = x[start:end][:length]
+
+    return crop
+
 
 def build_mask(tensors):
     shapes = [x.shape for x in tensors]
@@ -50,6 +73,9 @@ def maskword(x, mask_id, p=0.1):
     x = [e if m > p else mask_id for e, m in zip(x, mask)]
     return x
 
+def maskword_from_span(x, mask_id, span):
+    x = [e if e not in span else mask_id for e in x]
+    return x
 
 def shuffleword(x, p=0.1):
     count = (np.random.rand(len(x)) < p).sum()
@@ -63,9 +89,11 @@ def shuffleword(x, p=0.1):
     return x
 
 
-def apply_augmentation(x, opt):
+def apply_augmentation(x, opt, span=None):
     if opt.augmentation == "mask":
         return torch.tensor(maskword(x, mask_id=opt.mask_id, p=opt.prob_augmentation))
+    elif opt.augmentation == "mask_from_span":
+        return torch.tensor(maskword_from_span(x, mask_id=opt.mask_id, span=span))
     elif opt.augmentation == "replace":
         return torch.tensor(
             replaceword(x, min_random=opt.start_id, max_random=opt.vocab_size - 1, p=opt.prob_augmentation)

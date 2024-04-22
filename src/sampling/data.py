@@ -36,6 +36,14 @@ def load_dataset(opt, tokenizer):
         else:
             return torch.load(files[0], map_location="cpu")
 
+    elif opt.loading_mode == "from_strong_precomputed": 
+        files = glob.glob(os.path.join(opt.train_data_dir, "*.pt.strong"))
+        assert len(files) <= 1, 'more than one files'
+        if len(files) == 0: # means precomputed one is not there, run one.
+            sys.exit('run the `precompute.py` first')
+        else:
+            return torch.load(files[0], map_location="cpu")
+
 class ClusteredIndCropping(torch.utils.data.Dataset):
 
     def __init__(self, opt, documents, chunk_length, tokenizer):
@@ -54,6 +62,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         # cluster attrs
         self.clusters = None
         self.clusters_sse = 999 # the small the better
+
+        # sampling attrs
+        self.get_from_span = False
 
     def get_update_spans(
         self,
@@ -127,7 +138,7 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         candidates, scores = list(zip(*self.spans[index]))
         if self.select_span_mode == 'weighted':
             span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
-        if self.select_span_mode == 'max':
+        elif self.select_span_mode == 'max':
             span_tokens = candidates[0]
         elif self.select_span_mode == 'random':
             span_tokens = random.choices(candidates, k=1)[0] 
@@ -136,23 +147,24 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         return span_tokens
 
     def __getitem__(self, index):
-        # print(index)
         document = self.documents[index] # the crop is belong to one doc
+        span_tokens = self._select_spans(index)
+
         start_idx = random.randint(0, len(document) - self.chunk_length)
         end_idx = start_idx + self.chunk_length 
         tokens = document[start_idx:end_idx] 
 
+        # normal chunking
         bos, eos = self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
-        # fine the closest anchor of this span
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
-        c_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
-        q_tokens = apply_augmentation(q_tokens, self.opt)
-        c_tokens = apply_augmentation(c_tokens, self.opt)
+        q_tokens = apply_augmentation(q_tokens, self.opt, span_tokens)
         q_tokens = add_bos_eos(q_tokens, bos, eos)
-        c_tokens = add_bos_eos(c_tokens, bos, eos)
-        span_tokens = self._select_spans(index)
 
-        if span_tokens:
+        c_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
+        c_tokens = apply_augmentation(c_tokens, self.opt, span_tokens)
+        c_tokens = add_bos_eos(c_tokens, bos, eos)
+
+        if span_tokens is not None:
             span_tokens = add_bos_eos(span_tokens, bos, eos)
         return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens}
 
