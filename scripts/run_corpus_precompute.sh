@@ -5,7 +5,7 @@
 #SBATCH --mem=15G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --time=06:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=%x.%j.out
 
 # Set-up the environment.
@@ -29,7 +29,7 @@ python precompute.py \
     --tokenizer_name_or_path facebook/contriever \
     --num_spans 10 \
     --num_clusters 0.05 \
-    --batch_size 64 \
+    --batch_size 128 \
     --saved_file_format 'doc.span.{}.cluster.{}.pt' \
     --loading_mode from_precomputed \
     --faiss_output doc_emb_ \

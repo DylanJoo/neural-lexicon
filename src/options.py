@@ -26,7 +26,7 @@ class ModelOptions:
     # Objective weights
     alpha: float = field(default=1.0)
     beta: float = field(default=0.5) # since it's bidirectional
-    # gamma: float = field(default=0.0)
+    gamma: float = field(default=1.0)
     # delta: float = field(default=0.0)
 
 @dataclass

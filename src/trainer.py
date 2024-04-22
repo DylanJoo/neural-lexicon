@@ -183,6 +183,11 @@ class Trainer(hf_trainer):
 
         outputs = model(**inputs)
 
+        # if self.state.global_step % 10 == 0:
+        #     for i in range(3):
+        #         print(self.tokenizer.decode(inputs['span_tokens'][i], add_speicial_tokens=False))
+        #         print(self.tokenizer.decode(inputs['q_tokens'][i], add_speicial_tokens=False))
+
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:
