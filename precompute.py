@@ -67,8 +67,10 @@ def calculate_spans_and_clusters(args, dataset_name):
             max_doc_length=384,
             ngram_range=(2,3),
             top_k_spans=10,
-            return_doc_embeddings=True
+            return_doc_embeddings=True,
+            doc_embeddings_by_spans=True
     )
+    print(doc_embeddings.shape)
 
     ## [clustering]
     N=args.num_clusters
@@ -113,10 +115,8 @@ if __name__ == '__main__':
     tokenizer.bos_token = '[CLS]'
     tokenizer.eos_token = '[SEP]'
 
-    # dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.{K}.clusuter.{N_used}.pt')
-
-    # for dataset_name in ['scifact', 'scidocs']:
-    for dataset_name in ['trec-covid']:
+    # for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
+    for dataset_name in ['scifact']:
         doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
 
         if args.faiss_output:
