@@ -115,8 +115,8 @@ if __name__ == '__main__':
 
     # dataset.save(f'/home/dju/datasets/temp/{dataset_name}/doc.span.{K}.clusuter.{N_used}.pt')
 
-    for dataset_name in ['testing']:
-    # for dataset_name in ['trec-covid']:
+    # for dataset_name in ['scifact', 'scidocs']:
+    for dataset_name in ['trec-covid']:
         doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
 
         if args.faiss_output:

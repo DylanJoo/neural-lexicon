@@ -35,7 +35,6 @@ def main():
             model_opt.model_name, 
             add_pooling_layer=model_opt.add_pooling_layer,
             pooling=model_opt.pooling,
-            span_pooling=model_opt.span_pooling,
     )
     model = InBatchInteraction(
             model_opt, 
@@ -49,33 +48,11 @@ def main():
     ## if using `precomputed`. The select span mode is `no`
     train_dataset.select_span_mode = data_opt.select_span_mode
 
-    if data_opt.loading_mode == 'from_scratch':
-        from src.sampling.encoders import BERTEncoder
-        encoder = BERTEncoder(model_opt.model_name, device='cuda')
-        ## precomputed spans
-        K=10
-        doc_embeddings = train_dataset.get_update_spans(
-                encoder=encoder,
-                batch_size=128,
-                max_doc_length=384,
-                ngram_range=(2,3),
-                top_k_spans=K,
-                return_doc_embeddings=True
-        )
-        ## precomputed clusters
-        N=0.005
-        train_dataset.get_update_clusters(
-                embeddings=doc_embeddings, 
-                n_clusters=N,
-                device='cuda'
-        )
-        train_dataset.save(f'{data_opt.train_data_dir}/doc.span.{K}.clusuter.{N}.pt')
-        del encoder
-
     collator = Collator(opt=data_opt)
 
     trainer = Trainer(
             model=model, 
+            tokenizer=tokenizer,
             args=train_opt,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
