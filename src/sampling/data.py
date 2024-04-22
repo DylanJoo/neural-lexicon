@@ -11,7 +11,9 @@ import logging
 import random
 import datetime
 import torch
+import faiss
 
+from .utils import batch_iterator
 from .data_utils import *
 from .span_utils import add_extracted_spans
 from .cluster_utils import FaissKMeans
@@ -23,9 +25,7 @@ def load_dataset(opt, tokenizer):
         files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*.pkl"))
         assert len(files) == 1, 'more than one files'
         list_of_token_ids = torch.load(files[0], map_location="cpu")
-        dataset = ClusteredIndCropping(
-                opt, list_of_token_ids, opt.chunk_length, tokenizer
-        )
+        dataset = ClusteredIndCropping(opt, list_of_token_ids, tokenizer)
         return dataset
 
     elif opt.loading_mode == "from_precomputed": 
@@ -46,10 +46,10 @@ def load_dataset(opt, tokenizer):
 
 class ClusteredIndCropping(torch.utils.data.Dataset):
 
-    def __init__(self, opt, documents, chunk_length, tokenizer):
+    def __init__(self, opt, documents, tokenizer):
         super().__init__()
-        self.documents = [d for d in documents if len(d) > chunk_length]
-        self.chunk_length = chunk_length
+        self.documents = [d for d in documents if len(d) > opt.chunk_length]
+        self.chunk_length = opt.chunk_length
         self.tokenizer = tokenizer
         self.opt = opt
         self.opt.mask_id = tokenizer.mask_token_id 
@@ -58,13 +58,14 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         self.spans = None
         self.spans_msim = 0 # the larger the better
         self.select_span_mode = opt.select_span_mode
+        self.get_from_span = False
 
         # cluster attrs
         self.clusters = None
         self.clusters_sse = 999 # the small the better
 
-        # sampling attrs
-        self.get_from_span = False
+        # search attrs
+        self.index = None
 
     def get_update_spans(
         self,
@@ -73,7 +74,8 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         max_doc_length=256, 
         ngram_range=(2,3), 
         top_k_spans=5,
-        return_doc_embeddings=False
+        return_doc_embeddings=False,
+        doc_embeddings_by_spans=False
     ):
         """ 
         This is for precomputing process, and it will update the spans globally.
@@ -89,7 +91,8 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
                 top_k_spans=top_k_spans,
                 bos_id=self.tokenizer.bos_token_id,
                 eos_id=self.tokenizer.eos_token_id,
-                return_doc_embeddings=return_doc_embeddings
+                return_doc_embeddings=return_doc_embeddings,
+                by_spans=doc_embeddings_by_spans
         )
         self.spans = outputs[0]
         return outputs[1] if return_doc_embeddings else 0
@@ -104,7 +107,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         device='cpu',
         **cluster_args
     ):
-        """ Should work with constructing span embeddings """
+        """ 
+        Should work with constructing span embeddings 
+        """
         # this can be the subset of the entire doc embeddings
         if embeddings_for_kmeans is None:
             embeddings_for_kmeans = embeddings
@@ -115,7 +120,10 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
 
         n_clusters_used = min(embeddings_for_kmeans.shape[0] // min_points_per_centroid, n_clusters)
 
-        start = datetime.datetime.now()
+        # start = datetime.datetime.now()
+        # end = datetime.datetime.now()
+        # time_taken = (end - start).total_seconds() * 1000
+        # logger.info("Latency of cluster ({} documents {} clusters) {:.2f}ms".format(embeddings.shape[0], n_clusters, time_taken))
 
         kmeans = FaissKMeans(
                 n_clusters=n_clusters_used,
@@ -127,10 +135,6 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
 
         self.clusters = kmeans.assign(embeddings).flatten()
         self.clusters_sse = kmeans.inertia_
-
-        end = datetime.datetime.now()
-        time_taken = (end - start).total_seconds() * 1000
-        logger.info("Latency of cluster ({} documents {} clusters) {:.2f}ms".format(embeddings.shape[0], n_clusters, time_taken))
 
         return n_clusters_used
 

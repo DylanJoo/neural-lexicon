@@ -1,7 +1,7 @@
 import torch
 from tqdm import tqdm
 import collections
-import scipy.sparse as sp
+from scipy.sparse import csr_matrix
 import numpy as np
 from nltk.util import ngrams
 from sklearn.metrics.pairwise import cosine_similarity
@@ -18,10 +18,12 @@ def add_extracted_spans(
     top_k_spans=5,
     bos_id=101,
     eos_id=102,
-    return_doc_embeddings=False
+    return_doc_embeddings=False, 
+    by_spans=False
 ):
     with torch.no_grad():
         all_doc_embeddings = []
+        all_doc_embeddings_by_spans = []
         extracted_spans = []
 
         for batch_docs in tqdm(batch_iterator(documents, batch_size), \
@@ -35,7 +37,7 @@ def add_extracted_spans(
             batch_doc_embeddings = batch_doc_embeddings.detach().cpu()
 
             ### additional record doc embeddings
-            if return_doc_embeddings:
+            if return_doc_embeddings and (by_spans is False):
                 all_doc_embeddings.append(batch_doc_embeddings)
 
             ## build the ngram candidate set
@@ -53,6 +55,11 @@ def add_extracted_spans(
                 )
                 key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
                 extracted_spans.append(key_spans)
+
+                ### add average span embeddings
+                if by_spans and return_doc_embeddings:
+                    candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
+                    all_doc_embeddings.append(candidate_embeddings.mean(0)[None, ...])
 
     if return_doc_embeddings:
         return extracted_spans, torch.cat(all_doc_embeddings, dim=0).numpy()
@@ -105,7 +112,7 @@ def get_candidate_spans(docs, ngram_range):
     j_indices = np.asarray(j_indices, dtype=np.int64)
     indptr = np.asarray(indptr, dtype=np.int64)
     values = [1] * len(j_indices)
-    X = sp.csr_matrix((values, j_indices, indptr), shape=(len(indptr) - 1, len(bag_of_features)))
+    X = csr_matrix((values, j_indices, indptr), shape=(len(indptr) - 1, len(bag_of_features)))
 
     # reverse the key value of bof
     feature_mapping = {v: list(k) for k, v in bag_of_features.items()}
