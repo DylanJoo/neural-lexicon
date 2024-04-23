@@ -65,9 +65,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         self.clusters_sse = 999 # the small the better
 
         # search attrs
-        self.index = None
+        self.nminer = None
 
-    def get_update_spans(
+    def init_spans(
         self,
         encoder, 
         batch_size=64, 
@@ -78,9 +78,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         doc_embeddings_by_spans=False
     ):
         """ 
-        This is for precomputing process, and it will update the spans globally.
-        So the document for spannign is entire corpus. 
-        But in fact doing them in batch.
+        This is for precomputing process, 
+        The document for spannign is entire corpus,
+        but in fact doing them in batch.
         """
         outputs = add_extracted_spans(
                 encoder=encoder,
@@ -98,7 +98,7 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         return outputs[1] if return_doc_embeddings else 0
 
     # [TODO] some alternatives: minibatch
-    def get_update_clusters(
+    def init_clusters(
         self,
         embeddings,
         embeddings_for_kmeans=None,
@@ -119,11 +119,6 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
             n_clusters = embeddings_for_kmeans.shape[0] * n_clusters
 
         n_clusters_used = min(embeddings_for_kmeans.shape[0] // min_points_per_centroid, n_clusters)
-
-        # start = datetime.datetime.now()
-        # end = datetime.datetime.now()
-        # time_taken = (end - start).total_seconds() * 1000
-        # logger.info("Latency of cluster ({} documents {} clusters) {:.2f}ms".format(embeddings.shape[0], n_clusters, time_taken))
 
         kmeans = FaissKMeans(
                 n_clusters=n_clusters_used,
@@ -170,7 +165,8 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
 
         if span_tokens is not None:
             span_tokens = add_bos_eos(span_tokens, bos, eos)
-        return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens}
+
+        return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens, "data_index": index}
 
     def __len__(self):
         return len(self.documents)

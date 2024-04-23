@@ -1,3 +1,4 @@
+import torch
 from .data_utils import build_mask 
 from collections import defaultdict
 
@@ -19,6 +20,10 @@ class Collator(object):
         batch["q_mask"] = q_mask
         batch["c_tokens"] = c_tokens
         batch["c_mask"] = c_mask
+        batch['data_index'] = torch.Tensor(batch['data_index']) 
+        # for re-searching the negatives
+        # [todo] look for a better to include data_index, 
+        # since it's unnecessary to make it a tensor (wasting gpu)
 
         # derived from document
         if "span_tokens" in batch:

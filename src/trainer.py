@@ -8,6 +8,8 @@ from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_N
 from transformers.trainer_utils import seed_worker
 from torch.utils.data import DataLoader, RandomSampler
 
+from src.sampling.index_utils import NegativeSpanMiner
+
 logging.set_verbosity_info()
 logger = logging.get_logger("transformers")
 
@@ -170,6 +172,24 @@ class Trainer(hf_trainer):
 	# )
     #
 
+    # def _prepare_input(self, data: Union[torch.Tensor, Any]) -> Union[torch.Tensor, Any]:
+    #     """
+    #     Prepares one `data` before feeding it to the model, be it a tensor or a nested list/dictionary of tensors.
+    #     """
+    #     if isinstance(data, Mapping):
+    #         return type(data)({k: self._prepare_input(v) for k, v in data.items()})
+    #     elif isinstance(data, (tuple, list)):
+    #         return type(data)(self._prepare_input(v) for v in data)
+    #     elif isinstance(data, torch.Tensor):
+    #         kwargs = {"device": self.args.device}
+    #         if self.is_deepspeed_enabled and (torch.is_floating_point(data) or torch.is_complex(data)):
+    #             # NLP models inputs are int/uint and those get adjusted to the right dtype of the
+    #             # embedding. Other models such as wav2vec2's inputs are already float and thus
+    #             # may need special handling to match the dtypes of the model
+    #             kwargs.update({"dtype": self.accelerator.state.deepspeed_plugin.hf_ds_config.dtype()})
+    #         return data.to(**kwargs)
+    #     return data
+
     def compute_loss(self, model, inputs, return_outputs=False):
         """
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
@@ -211,7 +231,6 @@ class Trainer(hf_trainer):
                 )
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
-
 
         if self.state.global_step % 10 == 0:
             logger.info(f"loss: {outputs['loss'].item()} | acc: {outputs['acc']}")

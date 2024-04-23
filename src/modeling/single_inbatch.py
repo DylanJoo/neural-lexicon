@@ -13,7 +13,14 @@ class InBatchOutput(BaseModelOutput):
     logs: Optional[Dict[str, torch.FloatTensor]] = None
 
 class InBatchInteraction(nn.Module):
-    def __init__(self, opt, retriever, tokenizer, label_smoothing=False):
+    def __init__(
+        self, 
+        opt, 
+        retriever, 
+        tokenizer, 
+        miner=None, 
+        label_smoothing=False
+    ):
         super().__init__()
 
         self.opt = opt
@@ -35,8 +42,19 @@ class InBatchInteraction(nn.Module):
         # hidden_size = retriever.config.hidden_size
         # self.non_linear = nn.Sequential(nn.Linear(2*hidden_size, hidden_size), nn.Tanh())
 
-    def forward(self, q_tokens, q_mask, c_tokens, c_mask, span_tokens=None, span_mask=None, **kwargs):
+        ## negative miner
+        self.miner = miner
 
+    def forward(
+        self, 
+        q_tokens, q_mask, 
+        c_tokens, c_mask, 
+        span_tokens=None, span_mask=None, 
+        data_index=None,
+        **kwargs
+    ):
+
+        # [todo] see if therea anything different between dynamic and static negative vectors 
         bsz = len(q_tokens)
         labels = torch.arange(0, bsz, dtype=torch.long, device=q_tokens.device)
 
@@ -44,21 +62,43 @@ class InBatchInteraction(nn.Module):
         ## query/context contrastive from random cropping 
         qemb = self.encoder(input_ids=q_tokens, attention_mask=q_mask)[0]
         cemb = self.encoder(input_ids=c_tokens, attention_mask=c_mask)[0]
+
+        ### negative mining using precomputed embeddings
+        #### [todo] make this to __call__ when done
+        if self.miner is not None:
+            d_neg_vectors = self.miner.crop_depedent_from_docs_v1(
+                    embeds_1=qemb.detach().clone().cpu(), 
+                    embeds_2=cemb.detach().clone().cpu(),
+                    indices=data_index,
+                    n=10, k0=10, k=100
+            ).to(self.encoder.device)
+
         if self.norm_query:
             qemb = F.normalize(qemb, p=2, dim=-1)
         if self.norm_doc:
             cemb = F.normalize(cemb, p=2, dim=-1)
 
-        ## types of losses
+        if self.miner is not None:
+            scores_q = torch.einsum("id, jd->ij", 
+                    qemb / self.tau, torch.cat([cemb, d_neg_vectors], dim=0)
+            )
+            scores_c = torch.einsum("id, jd->ij", 
+                    cemb / self.tau, torch.cat([qemb, d_neg_vectors], dim=0)
+            )
+        else:
+            scores_q = torch.einsum("id, jd->ij", qemb / self.tau, cemb)
+            scores_c = torch.einsum("id, jd->ij", cemb / self.tau, qemb)
+
+
+        ## computing losses
         CELoss = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
         KLLoss = nn.KLDivLoss(reduction='batchmean')
         MSELoss = nn.MSELoss()
 
         logs = {}
-        scores = torch.einsum("id, jd->ij", qemb / self.tau, cemb)
-        loss = CELoss(scores, labels)
+        loss = (CELoss(scores_q, labels) + CELoss(scores_c, labels)) /2
 
-        predicted_idx = torch.argmax(scores, dim=-1)
+        predicted_idx = torch.argmax(scores_q, dim=-1)
         accuracy = 100 * (predicted_idx == labels).float().mean()
         logs.update({'loss_sent': loss, 'acc_sent': accuracy})
 

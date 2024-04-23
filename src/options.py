@@ -28,6 +28,8 @@ class ModelOptions:
     beta: float = field(default=0.5) # since it's bidirectional
     gamma: float = field(default=1.0)
     # delta: float = field(default=0.0)
+    # Negative miner
+    prebuilt_index_dir: Optional[str] = field(default=None)
 
 @dataclass
 class DataOptions:
@@ -70,3 +72,4 @@ class TrainOptions(TrainingArguments):
     fp16: bool = field(default=False)
     wandb_project: Optional[str] = field(default=None)
     do_tas_doc: Optional[bool] = field(default=False)
+    do_negative_sampling: bool = field(default=False)
