@@ -11,6 +11,7 @@ from src.options import ModelOptions, DataOptions, TrainOptions
 
 from src.sampling.data import load_dataset
 from src.sampling.collators import Collator
+from src.sampling.index_utils import NegativeSpanMiner
 
 os.environ['WANDB_PROJECT'] = 'SSLDR-span-learn'
 
@@ -22,14 +23,31 @@ def main():
     if train_opt.wandb_project:
         os.environ["WANDB_PROJECT"] = train_opt.wandb_project
 
-    # [Model] tokenizer
+    # [Config] tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_opt.tokenizer_name or model_opt.model_name)
     tokenizer.bos_token = '[CLS]'
     tokenizer.eos_token = '[SEP]'
 
+    # [Data] train/eval datasets, collator, preprocessor
+    train_dataset = load_dataset(data_opt, tokenizer)
+    eval_dataset = None
+    ## if using `precomputed`. The select span mode is `no`
+    train_dataset.select_span_mode = data_opt.select_span_mode
+    collator = Collator(opt=data_opt)
+
     # [Model] model architecture (encoders and bi-encoder framework)
     from src.modeling import Contriever
     from src.modeling import InBatchInteraction
+
+    ## [Model] negative miner
+    if train_opt.do_negative_sampling:
+        negative_miner = NegativeSpanMiner(
+                spans=train_dataset.spans,
+                clusters=train_dataset.clusters,
+                index_dir=model_opt.prebuilt_index_dir
+        )
+    else:
+        negative_miner = None
 
     encoder = Contriever.from_pretrained(
             model_opt.model_name, 
@@ -37,19 +55,12 @@ def main():
             pooling=model_opt.pooling,
     )
     model = InBatchInteraction(
-            model_opt, 
+            opt=model_opt, 
             retriever=encoder, 
-            tokenizer=tokenizer
+            tokenizer=tokenizer,
+            miner=negative_miner
     )
     
-    # [Data] train/eval datasets, collator, preprocessor
-    train_dataset = load_dataset(data_opt, tokenizer)
-    eval_dataset = None
-    ## if using `precomputed`. The select span mode is `no`
-    train_dataset.select_span_mode = data_opt.select_span_mode
-
-    collator = Collator(opt=data_opt)
-
     trainer = Trainer(
             model=model, 
             tokenizer=tokenizer,
