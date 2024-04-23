@@ -1,44 +1,38 @@
-from src.sampling.data import load_dataset
 import os
 import torch
-from src.sampling.encoders import BERTEncoder
+import argparse
+import faiss
 from transformers import AutoTokenizer
 
+from src.sampling.encoders import BERTEncoder
 from src.options import DataOptions
+from src.sampling.data_utils import build_mask
 from src.sampling.data import load_dataset
-
-import argparse
-
-import faiss
+from src.sampling.index_utils import NegativeSpanMiner
 
 def main(args, name):
     # searching
-
     data_opt = DataOptions(
             train_data_dir=f'/home/dju/datasets/temp/{dataset_name}', 
             chunk_length=256,
             loading_mode='from_precomputed'
     )
     dataset = load_dataset(data_opt, tokenizer)
-    dataset.documents = dataset.documents[:10]
 
-    doc_embeddings = dataset.get_update_spans(
-            encoder, 
-            batch_size=64, 
-            max_doc_length=256, 
-            ngram_range=(2,3), 
-            top_k_spans=5,
-            return_doc_embeddings=True,
-            doc_embeddings_by_spans=True
+    index_dir = f'/home/dju/indexes/temp/{args.prefix}_{name}'
+    miner = NegativeSpanMiner(
+            spans=dataset.spans[:10], 
+            clusters=dataset.clusters[:10], 
+            index_dir=index_dir
     )
-
     # outputs[0]: distance
     # outputs[1]: indices
     # outputs[2]: vectors
-
-    # print(tokenizer.decode(dataset.spans[0][0][0]), dataset.clusters[0])
-    # for j in outputs[1][0]:
-    #     print(tokenizer.decode(dataset.spans[j][0][0]), dataset.clusters[j])
+    input_ids, mask = build_mask(torch.tensor([dataset.documents[0]]))
+    embeddings_1 = encoder.encode(input_ids=input_ids, attention_mask=mask)
+    testing = torch.cat([embeddings_1, embeddings_1], dim=0)
+    testing = testing.detach().cpu()
+    miner.crop_depedent_from_docs_v1(testing, testing, [0])
 
     ## [span extraction]
     ## [clustering]
@@ -50,16 +44,13 @@ if __name__ == '__main__':
     parser.add_argument("--encoder_name_or_path", default='facebook/contriever', type=str)
     parser.add_argument("--tokenizer_name_or_path", default=None, type=str)
     parser.add_argument("--device", default='cpu', type=str)
-    # parser.add_argument("--num_spans", default=10, type=int)
-    # parser.add_argument("--num_clusters", default=0.05, type=float)
-    # parser.add_argument("--batch_size", default=128, type=int)
-    # parser.add_argument("--saved_file_format", default='doc.span.{}.cluster.{}.pt', type=str, required=True)
-    # parser.add_argument("--loading_mode", default=None, type=str, required=True)
-    # faiss index
-    # parser.add_argument("--faiss_output", default=None, type=str)
+    parser.add_argument("--prefix", default='doc_emb', type=str)
     args = parser.parse_args()
 
-    encoder = BERTEncoder(args.encoder_name_or_path, device=args.device)
+    #
+    encoder = BERTEncoder(
+            args.encoder_name_or_path, device=args.device
+    )
     tokenizer = AutoTokenizer.from_pretrained(
             args.tokenizer_name_or_path or args.encoder_name_or_path
     )
