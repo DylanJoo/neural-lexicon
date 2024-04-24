@@ -20,6 +20,7 @@ from .cluster_utils import FaissKMeans
 
 logger = logging.getLogger(__name__)
 
+# [todo] add the `doc.by.spans` type of data as new condition.
 def load_dataset(opt, tokenizer):
     if opt.loading_mode == "from_scratch": 
         files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*.pkl"))

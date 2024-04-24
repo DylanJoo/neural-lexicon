@@ -23,7 +23,6 @@ def add_extracted_spans(
 ):
     with torch.no_grad():
         all_doc_embeddings = []
-        all_doc_embeddings_by_spans = []
         extracted_spans = []
 
         for batch_docs in tqdm(batch_iterator(documents, batch_size), \
@@ -57,7 +56,7 @@ def add_extracted_spans(
                 extracted_spans.append(key_spans)
 
                 ### add average span embeddings
-                if by_spans and return_doc_embeddings:
+                if return_doc_embeddings and (by_spans is True):
                     candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
                     all_doc_embeddings.append(candidate_embeddings.mean(0)[None, ...])
 

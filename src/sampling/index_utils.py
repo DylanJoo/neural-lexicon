@@ -30,10 +30,12 @@ class NegativeSpanMiner(FaissSearcher):
 
         self.index_dir = index_dir
 
-    def update_index(self, embed_vectors):
+    @staticmethod
+    def save_index(embed_vectors, index_dir=None):
 
-        n, d = vectors.shape
-        embedding_writer = FaissRepresentationWriter(self.index_dir, d)
+        n, d = embed_vectors.shape
+        index_dir = (index_dir or self.index_dir)
+        embedding_writer = FaissRepresentationWriter(index_dir, d)
         embed_ids = list(range(n))
 
         with embedding_writer:
@@ -51,6 +53,7 @@ class NegativeSpanMiner(FaissSearcher):
         n=1, 
         k0=0, 
         k=20, 
+        sampling='random',
         return_ids=False
     ):
         """
@@ -74,25 +77,25 @@ class NegativeSpanMiner(FaissSearcher):
         _, I2, V2 = self.index.search_and_reconstruct(embeds_2, k)
 
         ## collect into a group I1, I2
-        batch_ids = []
+        batch_docids = []
         batch = []
         N = embeds_1.shape[0] * n
-        while len(batch_ids) < N:
+        while len(batch_docids) < N:
             for i, idx in enumerate(indices):
                 # first ranking list filtering (this is EN)
                 try:
                     bound = I1[i].index(idx)
                 except:
                     bound = 0
-                I1_i = I1[i][max(bound, k0):]
-                V1_i = V1[i][max(bound, k0):]
+                I1_i = I1[i][max(1+bound, k0):]
+                V1_i = V1[i][max(1+bound, k0):]
 
                 try:
                     bound = I2[i].index(idx)
                 except:
                     bound = 0
-                I2_i = I2[i][max(bound, k0):]
-                V2_i = V2[i][max(bound, k0):]
+                I2_i = I2[i][max(1+bound, k0):]
+                V2_i = V2[i][max(1+bound, k0):]
                 overlap = np.in1d(I2_i, I1_i)
 
                 ## filter the overlapped and combine
@@ -100,12 +103,17 @@ class NegativeSpanMiner(FaissSearcher):
                 I_i = np.append(I1_i, I2_i[~overlap])
                 V_i = np.append(V1_i, V2_i[~overlap], axis=0)
 
-                j = random.sample(range(len(I_i)), 1)[0]
-                batch_ids.append( I_i[j] ) 
+                if sampling == 'random':
+                    j = random.sample(range(len(I_i)), 1)[0]
+                elif sampling == 'top':
+                    j = 0
+
+                batch_docids.append( I_i[j] ) 
                 batch.append( torch.tensor(V_i[j, :]) )
 
         if return_ids:
-            raise ValueError('no implemented yet')
+            # raise ValueError('no implemented yet')
+            return batch_docids
         else:
             return torch.cat(batch).view(N, -1).to(embeds_1.device)
 
