@@ -72,4 +72,6 @@ class TrainOptions(TrainingArguments):
     fp16: bool = field(default=False)
     wandb_project: Optional[str] = field(default=None)
     do_tas_doc: Optional[bool] = field(default=False)
-    do_negative_sampling: bool = field(default=False)
+    # negative sampling
+    do_negative_sampling: Optional[bool] = field(default=False)
+    negative_samples_position: Optional[str] = field(default='before')

@@ -45,7 +45,7 @@ class NegativeSpanMiner(FaissSearcher):
                 })
         print('index saved')
 
-    def crop_depedent_from_docs_v1(
+    def crop_depedent_from_docs(
         self, 
         embeds_1, 
         embeds_2,
@@ -53,7 +53,6 @@ class NegativeSpanMiner(FaissSearcher):
         n=1, 
         k0=0, 
         k=20, 
-        sampling='random',
         return_ids=False
     ):
         """
@@ -61,8 +60,8 @@ class NegativeSpanMiner(FaissSearcher):
         -----
         embeds: search negative documents via doc embedding 
         n: int, number negative samples for each embeds
-        k1: int, the threshold of positive samples
-        k2: int, the threshold of negative samples
+        k0: int, the threshold of positive samples (not used)
+        k: int, the threshold of negative samples
 
         return
         ------
@@ -73,8 +72,8 @@ class NegativeSpanMiner(FaissSearcher):
             embeds_1 = embeds_1.unsqueeze(0)
             embeds_2 = embeds_2.unsqueeze(0)
 
-        _, I1, V1 = self.index.search_and_reconstruct(embeds_1, k)
-        _, I2, V2 = self.index.search_and_reconstruct(embeds_2, k)
+        S1, I1, V1 = self.index.search_and_reconstruct(embeds_1, k)
+        S2, I2, V2 = self.index.search_and_reconstruct(embeds_2, k)
 
         ## collect into a group I1, I2
         batch_docids = []
@@ -82,34 +81,37 @@ class NegativeSpanMiner(FaissSearcher):
         N = embeds_1.shape[0] * n
         while len(batch_docids) < N:
             for i, idx in enumerate(indices):
-                # first ranking list filtering (this is EN)
+
+                I1_i, I2_i = I1[i], I2[i]
+                V1_i, V2_i = V1[i], V2[i]
+                S1_i, S2_i = S1[i], S2[i]
+
+                ## filter the overlapped and combine (harder a bit)
+                overlap_1 = np.in1d(I1_i, I2_i)
+                overlap_2 = np.in1d(I2_i, I1_i)
+
+                I_i = np.append(I1_i[~overlap_1], I2_i[~overlap_2])
+                V_i = np.append(V1_i[~overlap_1], V2_i[~overlap_2], axis=0)
+                S_i = np.append(S1_i[~overlap_1], S2_i[~overlap_2])
+
+                ## reordering the lists
+                I_i = I_i[np.argsort(S_i)]
+                V_i = V_i[np.argsort(S_i)]
+
+                ## exclude the hit as well
                 try:
-                    bound = I1[i].index(idx)
+                    hit = I_i.index(idx)
                 except:
-                    bound = 0
-                I1_i = I1[i][max(1+bound, k0):]
-                V1_i = V1[i][max(1+bound, k0):]
+                    hit = -1
 
-                try:
-                    bound = I2[i].index(idx)
-                except:
-                    bound = 0
-                I2_i = I2[i][max(1+bound, k0):]
-                V2_i = V2[i][max(1+bound, k0):]
-                overlap = np.in1d(I2_i, I1_i)
-
-                ## filter the overlapped and combine
-
-                I_i = np.append(I1_i, I2_i[~overlap])
-                V_i = np.append(V1_i, V2_i[~overlap], axis=0)
-
-                if sampling == 'random':
-                    j = random.sample(range(len(I_i)), 1)[0]
-                elif sampling == 'top':
-                    j = 0
-
-                batch_docids.append( I_i[j] ) 
-                batch.append( torch.tensor(V_i[j, :]) )
+                ## find the hardest 
+                j = 0
+                while (j < len(I_i)):
+                    if (I_i[j] not in batch_docids) and (j != hit):
+                        batch_docids.append( I_i[j] ) 
+                        batch.append( torch.tensor(V_i[j, :]) )
+                        j += len(I_i)
+                    j += 1
 
         if return_ids:
             # raise ValueError('no implemented yet')

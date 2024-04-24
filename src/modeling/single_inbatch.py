@@ -66,11 +66,11 @@ class InBatchInteraction(nn.Module):
         ### negative mining using precomputed embeddings
         #### [todo] make this to __call__ when done
         if self.miner is not None:
-            d_neg_vectors = self.miner.crop_depedent_from_docs_v1(
+            d_neg_vectors = self.miner.crop_depedent_from_docs(
                     embeds_1=qemb.detach().clone().cpu(), 
                     embeds_2=cemb.detach().clone().cpu(),
                     indices=data_index,
-                    n=10, k0=10, k=100
+                    n=1, k0=10, k=100,
             ).to(self.encoder.device)
 
         if self.norm_query:
@@ -88,7 +88,6 @@ class InBatchInteraction(nn.Module):
         else:
             scores_q = torch.einsum("id, jd->ij", qemb / self.tau, cemb)
             scores_c = torch.einsum("id, jd->ij", cemb / self.tau, qemb)
-
 
         ## computing losses
         CELoss = nn.CrossEntropyLoss(label_smoothing=self.label_smoothing)
@@ -138,20 +137,7 @@ class InBatchInteraction(nn.Module):
         return self.encoder
 
     # def forward_bidirectional(self, tokens, mask, **kwargs):
-    #     bsz = len(tokens)
-    #     labels = torch.arange(bsz, dtype=torch.long, device=tokens.device).view(-1, 2).flip([1]).flatten().contiguous()
-    #
-    #     emb = self.encoder(input_ids=tokens, attention_mask=mask)
-    #
-    #     scores = torch.matmul(emb/self.tau, emb.transpose(0, 1))
-    #     scores.fill_diagonal_(float('-inf'))
-    #
-    #     loss = torch.nn.functional.cross_entropy(scores, labels, label_smoothing=self.label_smoothing) 
-    #
-    #     predicted_idx = torch.argmax(scores, dim=-1)
-    #     accuracy = 100 * (predicted_idx == labels).float().mean()
-    #
-    #     return {'loss': loss, 'acc': accuracy}
+    # becoming the default setup as it seems to be better
 
 class InBatchInteractionWithSpan(InBatchInteraction):
 
