@@ -30,15 +30,23 @@ def load_dataset(opt, tokenizer):
         return dataset
 
     elif opt.loading_mode == "from_precomputed": 
-        files = glob.glob(os.path.join(opt.train_data_dir, "*.pt"))
+        if 'span' in opt.prebuilt_index_dir:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt"))
+        else:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt"))
         assert len(files) <= 1, 'more than one files'
+
         if len(files) == 0: # means precomputed one is not there, run one.
             sys.exit('run the `precompute.py` first')
         else:
             return torch.load(files[0], map_location="cpu")
 
     elif opt.loading_mode == "from_strong_precomputed": 
-        files = glob.glob(os.path.join(opt.train_data_dir, "*.pt.strong"))
+        if 'span' in opt.prebuilt_index_dir:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt"))
+        else:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt"))
+
         assert len(files) <= 1, 'more than one files'
         if len(files) == 0: # means precomputed one is not there, run one.
             sys.exit('run the `precompute.py` first')

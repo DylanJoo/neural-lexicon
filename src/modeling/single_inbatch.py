@@ -53,38 +53,53 @@ class InBatchInteraction(nn.Module):
         data_index=None,
         **kwargs
     ):
-
-        # [todo] see if therea anything different between dynamic and static negative vectors 
+        """
+        [todo] see if therea anything different between dynamic and static negative vectors 
+        """
         bsz = len(q_tokens)
         labels = torch.arange(0, bsz, dtype=torch.long, device=q_tokens.device)
 
         loss = 0.0
-        ## query/context contrastive from random cropping 
         qemb = self.encoder(input_ids=q_tokens, attention_mask=q_mask)[0]
         cemb = self.encoder(input_ids=c_tokens, attention_mask=c_mask)[0]
 
+        ## [st-st]
+        ### [revise here] !!!!
         ### negative mining using precomputed embeddings
-        #### [todo] make this to __call__ when done
-        if self.miner is not None:
-            d_neg_vectors = self.miner.crop_depedent_from_docs(
+        if (self.miner is not None) and self.miner.use_doc_by_doc:
+            neg_vectors = self.miner.crop_depedent_from_docs(
                     embeds_1=qemb.detach().clone().cpu(), 
                     embeds_2=cemb.detach().clone().cpu(),
                     indices=data_index,
-                    n=1, k0=10, k=100,
+                    n=5, k0=0, k=50, 
+                    exclude_overlap=True,
+                    return_token_ids=False
             ).to(self.encoder.device)
+            # neg_inputs = self.miner.crop_depedent_from_docs(
+            #         embeds_1=qemb.detach().clone().cpu(), 
+            #         embeds_2=cemb.detach().clone().cpu(),
+            #         indices=data_index,
+            #         n=5, k0=0, k=100, 
+            #         exclude_overlap=True,
+            #         return_token_ids=True
+            # )
+            # neg_vectors = self.encoder(
+            #         input_ids=neg_inputs[0].to(self.encoder.device),
+            #         attention_mask=neg_inputs[1].to(self.encoder.device)
+            # )[0]
+        else:
+            neg_vectors = None
 
         if self.norm_query:
             qemb = F.normalize(qemb, p=2, dim=-1)
         if self.norm_doc:
             cemb = F.normalize(cemb, p=2, dim=-1)
 
-        if self.miner is not None:
+        if neg_vectors is not None:
             scores_q = torch.einsum("id, jd->ij", 
-                    qemb / self.tau, torch.cat([cemb, d_neg_vectors], dim=0)
-            )
+                    qemb / self.tau, torch.cat([cemb, neg_vectors], dim=0))
             scores_c = torch.einsum("id, jd->ij", 
-                    cemb / self.tau, torch.cat([qemb, d_neg_vectors], dim=0)
-            )
+                    cemb / self.tau, torch.cat([qemb, neg_vectors], dim=0))
         else:
             scores_q = torch.einsum("id, jd->ij", qemb / self.tau, cemb)
             scores_c = torch.einsum("id, jd->ij", cemb / self.tau, qemb)
@@ -102,7 +117,8 @@ class InBatchInteraction(nn.Module):
         logs.update({'loss_sent': loss, 'acc_sent': accuracy})
 
         loss_sp = 0.0
-        ## query-span/context-span contrastive from doc-derived spans
+        ## [st-sp]
+        ### query-span & context-span contrastive 
         if span_tokens is not None and span_mask is not None:
             spemb = self.encoder(
                     input_ids=span_tokens,
@@ -110,26 +126,44 @@ class InBatchInteraction(nn.Module):
                     pooling=self.opt.span_pooling
             )[0]
 
+            if (self.miner is not None) and self.miner.use_doc_by_span:
+                neg_vectors = self.miner.span_depedent_from_docs(
+                        embeds=spemb.detach().clone().cpu(), 
+                        indices=data_index,
+                        n=1, k0=0, k=50,
+                        return_token_ids=False
+                ).to(self.encoder.device)
+            else:
+                neg_vectors = None
+
             if self.norm_spans:
                 spemb = F.normalize(spemb, p=2, dim=-1)
 
-            # span-conditioanl embeddings
-            # span embeddings
-            scores_qsp = torch.einsum("id, jd->ij", qemb / self.tau_span, spemb)
-            scores_csp = torch.einsum("id, jd->ij", cemb / self.tau_span, spemb)
+            if neg_vectors is not None:
+                scores_qsp = torch.einsum("id, jd->ij", 
+                        qemb / self.tau, torch.cat([spemb, neg_vectors], dim=0))
+                scores_csp = torch.einsum("id, jd->ij", 
+                        cemb / self.tau, torch.cat([spemb, neg_vectors], dim=0))
+            else:
+                scores_qsp = torch.einsum("id, jd->ij", qemb / self.tau_span, spemb)
+                scores_csp = torch.einsum("id, jd->ij", cemb / self.tau_span, spemb)
+
             loss_sp = (CELoss(scores_qsp, labels) + CELoss(scores_csp, labels)) / 2
 
             predicted_idx = torch.argmax(scores_qsp, dim=-1)
             accuracy_sp = 100 * (predicted_idx == labels).float().mean()
             logs.update({'loss_span': loss_sp, 'acc_span': accuracy_sp})
 
-            ## query-span-score vs. context-span-score distribution
+            ## [sp-sp]
             target = F.softmax(scores_qsp, dim=1)
             logits_spans = F.log_softmax(scores_csp, dim=1)
             loss_distil = KLLoss(logits_spans, target)
             logs.update({'loss_span_distil': loss_distil})
 
         logs.update(self.encoder.additional_log)
+        if self.miner is not None:
+            logs.update(self.miner.additional_log)
+
         loss = loss * self.opt.alpha + loss_sp * self.opt.beta + loss_distil * self.opt.gamma
         return InBatchOutput(loss=loss, acc=accuracy, logs=logs)
 

@@ -5,76 +5,38 @@ from transformers import AutoTokenizer
 
 from src.options import DataOptions
 from src.sampling.data import load_dataset
+from src.sampling.index_utils import NegativeSpanMiner
+from src.sampling.utils import batch_iterator
 
 import argparse
 
-from pyserini.encode import FaissRepresentationWriter
-import faiss
-
-TEMP_DIR = '/home/dju/indexes/temp'
-
-def batch_iterator(iterable, size=1, return_index=False):
-    l = len(iterable)
-    for ndx in range(0, l, size):
-        if return_index:
-            yield (ndx, min(ndx + size, l))
-        else:
-            yield iterable[ndx:min(ndx + size, l)]
-
-def build_faiss_index(args, name, embed_ids, embed_vectors):
-    # build 
-    index_dir = os.path.join(TEMP_DIR, args.faiss_output + name)
-    dimension = embed_vectors.shape[-1]
-    embedding_writer = FaissRepresentationWriter(index_dir, dimension)
-
-    with embedding_writer:
-        for s, e in batch_iterator(embed_ids, 64, True):
-            embed_id = embed_ids[s:e]
-            embed_vector = embed_vectors[s:e]
-            embedding_writer.write({"id": embed_ids, "vector": embed_vector})
-
-    # testing 
-    index_path = os.path.join(index_dir, 'index')
-    docid_path = os.path.join(index_dir, 'docid')
-    index = faiss.read_index(index_path)
-
-    # searching
-    emb_q = embed_vectors[0:1]
-    distances, indexes, vectors = index.search_and_reconstruct(emb_q, 10)
-    vectors = vectors[0]
-    distances = distances.flat
-    indexes = indexes.flat
-    print(
-            [(embed_ids[idx], score) for score, idx, vector in zip(distances, indexes, vectors) if idx != -1]
-    )
-    return 0
 
 def calculate_spans_and_clusters(args, dataset_name):
 
     data_opt = DataOptions(
-            train_data_dir=f'/home/dju/datasets/temp/{dataset_name}', 
+            train_data_dir=f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
             chunk_length=256,
             loading_mode='from_scratch'
     )
     dataset = load_dataset(data_opt, tokenizer)
-    dataset.documents = dataset.documents
+    # dataset.documents = dataset.documents[:10] # shrink for debugging
 
     ## [span extraction]
     K=args.num_spans
-    doc_embeddings = dataset.get_update_spans(
+    doc_embeddings = dataset.init_spans(
             encoder,
             batch_size=args.batch_size,
             max_doc_length=384,
             ngram_range=(2,3),
             top_k_spans=10,
             return_doc_embeddings=True,
-            doc_embeddings_by_spans=True
+            doc_embeddings_by_spans=args.index_span_embeddings
     )
     print(doc_embeddings.shape)
 
     ## [clustering]
     N=args.num_clusters
-    N_used = dataset.get_update_clusters(
+    N_used = dataset.init_clusters(
             doc_embeddings, 
             n_clusters=N,
             min_points_per_centroid=32,
@@ -82,12 +44,13 @@ def calculate_spans_and_clusters(args, dataset_name):
     )
 
     ## [save and load (testing)]
-    path = os.path.join(f'/home/dju/datasets/temp/{dataset_name}', 
+    # train_data_dir=f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
+    path = os.path.join(f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
                         args.saved_file_format.format(K, N_used))
     dataset.save(path)
 
     ## [quick testing]
-    data_opt.loading_mode=args.loading_mode
+    data_opt.loading_mode = args.loading_mode
     dataset = load_dataset(data_opt, tokenizer)
 
     print('span\n', dataset.spans[0])
@@ -108,6 +71,7 @@ if __name__ == '__main__':
     parser.add_argument("--device", default='cpu', type=str)
     # faiss index
     parser.add_argument("--faiss_output", default=None, type=str)
+    parser.add_argument("--index_span_embeddings", default=False, action='store_true')
     args = parser.parse_args()
 
     encoder = BERTEncoder(args.encoder_name_or_path, device=args.device)
@@ -116,8 +80,12 @@ if __name__ == '__main__':
     tokenizer.eos_token = '[SEP]'
 
     # for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
-    for dataset_name in ['scifact']:
+    for dataset_name in ['scifact', 'scidocs']:
         doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
 
         if args.faiss_output:
-            build_faiss_index(args, dataset_name, list(range(len(doc_embeddings))), doc_embeddings)
+            TEMP_DIR = '/home/dju/indexes/temp'
+            NegativeSpanMiner.save_index(
+                    embed_vectors=doc_embeddings,
+                    index_dir=os.path.join(TEMP_DIR, args.faiss_output + dataset_name)
+            )

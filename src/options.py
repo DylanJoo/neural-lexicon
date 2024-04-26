@@ -28,8 +28,6 @@ class ModelOptions:
     beta: float = field(default=0.5) # since it's bidirectional
     gamma: float = field(default=1.0)
     # delta: float = field(default=0.0)
-    # Negative miner
-    prebuilt_index_dir: Optional[str] = field(default=None)
 
 @dataclass
 class DataOptions:
@@ -43,6 +41,8 @@ class DataOptions:
     augmentation: Optional[str] = field(default=None)
     prob_augmentation: Optional[float] = field(default=0.0)
     select_span_mode: Optional[str] = field(default='no')
+    # Negative miner
+    prebuilt_index_dir: Optional[str] = field(default='no')
 
 @dataclass
 class TrainOptions(TrainingArguments):

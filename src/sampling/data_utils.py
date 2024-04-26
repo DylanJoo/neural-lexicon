@@ -37,7 +37,6 @@ def span_randomcrop(x, y, ratio_min, ratio_max, x_old):
 
     return crop
 
-
 def build_mask(tensors):
     shapes = [x.shape for x in tensors]
     maxlength = max([len(x) for x in tensors])
