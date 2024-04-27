@@ -43,9 +43,9 @@ def load_dataset(opt, tokenizer):
 
     elif opt.loading_mode == "from_strong_precomputed": 
         if 'span' in opt.prebuilt_index_dir:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt"))
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.strong"))
         else:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt"))
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.strong"))
 
         assert len(files) <= 1, 'more than one files'
         if len(files) == 0: # means precomputed one is not there, run one.
