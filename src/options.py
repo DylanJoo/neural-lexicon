@@ -43,6 +43,7 @@ class DataOptions:
     select_span_mode: Optional[str] = field(default='no')
     # Negative miner
     prebuilt_index_dir: Optional[str] = field(default='no')
+    use_doc_by: Optional[str] = field(default='doc')
 
 @dataclass
 class TrainOptions(TrainingArguments):

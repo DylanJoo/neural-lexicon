@@ -16,7 +16,7 @@ class PRFDenseSearchResult:
 class NegativeSpanMiner(FaissSearcher):
     """ Index spans for every documents, """
 
-    def __init__(self, dataset, tokenizer, index_dir=None):
+    def __init__(self, dataset, tokenizer, index_dir=None, use_doc_by='doc'):
 
         self.spans = dataset.spans
         self.clusters = dataset.clusters
@@ -32,12 +32,7 @@ class NegativeSpanMiner(FaissSearcher):
         else:
             self.index, self.docids = self.load_index(index_dir)
 
-        if 'span' in index_dir:
-            self.use_doc_by_span = True
-            self.use_doc_by_doc = False
-        else:
-            self.use_doc_by_doc = True
-            self.use_doc_by_span = False
+        self.use_doc_by = use_doc_by
 
     @staticmethod
     def save_index(embed_vectors, index_dir=None):
@@ -73,11 +68,12 @@ class NegativeSpanMiner(FaissSearcher):
         k0: int, the threshold of positive samples (not used)
         k: int, the threshold of negative samples
         exclude_overlap: bool, remove the docs from overlap, preventing false neg.
+        return_token_ids: bool, return the token ids, thus the graident can propagate thru
 
         return
         ------
-        vectors of the negatives with size of (batch_size x n)
-        [todo] false negative filtering
+        vectors of the negatives with size of (batch_size x n). 
+        the negatives are from span embeddings
         """
         if embeds_1.dim() == 1: # singe vetor
             embeds_1 = embeds_1.unsqueeze(0)
@@ -144,8 +140,7 @@ class NegativeSpanMiner(FaissSearcher):
                 candidates, scores = list(zip(*self.spans[docid]))
                 span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
                 batch_token_ids.append(add_bos_eos(span_tokens, self.bos, self.eos))
-
-            # use documents
+            # use documents [deprecated]
             # batch_token_ids = list(
             #         add_bos_eos(self.documents[docid][:128], self.bos, self.eos) \
             #                 for docid in batch_docids
