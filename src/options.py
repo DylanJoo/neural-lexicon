@@ -28,6 +28,7 @@ class ModelOptions:
     beta: float = field(default=0.5) # since it's bidirectional
     gamma: float = field(default=1.0)
     # delta: float = field(default=0.0)
+    mine_neg_using: Optional[str] = field(default=None)
 
 @dataclass
 class DataOptions:
@@ -43,7 +44,8 @@ class DataOptions:
     select_span_mode: Optional[str] = field(default='no')
     # Negative miner
     prebuilt_index_dir: Optional[str] = field(default='no')
-    use_doc_by: Optional[str] = field(default='doc')
+    precompute_with_spans: bool = field(default=False)
+    preprocessing: Optional[str] = field(default='replicate')
 
 @dataclass
 class TrainOptions(TrainingArguments):
@@ -76,3 +78,5 @@ class TrainOptions(TrainingArguments):
     # negative sampling
     do_negative_sampling: Optional[bool] = field(default=False)
     negative_samples_position: Optional[str] = field(default='before')
+    lr_scheduler_type: Optional[str] = field(default='constant') 
+    # original is linear

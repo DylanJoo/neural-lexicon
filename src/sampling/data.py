@@ -26,14 +26,14 @@ def load_dataset(opt, tokenizer):
         files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*.pkl"))
         assert len(files) == 1, 'more than one files'
         list_of_token_ids = torch.load(files[0], map_location="cpu")
-        dataset = ClusteredIndCropping(opt, list_of_token_ids, tokenizer)
+        dataset = DocWiseIndCropping(opt, list_of_token_ids, tokenizer)
         return dataset
 
     elif opt.loading_mode == "from_precomputed": 
-        if 'span' in opt.prebuilt_index_dir:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt"))
+        if opt.precompute_with_spans:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.ctrv"))
         else:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt"))
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.ctrv"))
         assert len(files) <= 1, 'more than one files'
 
         if len(files) == 0: # means precomputed one is not there, run one.
@@ -42,10 +42,10 @@ def load_dataset(opt, tokenizer):
             return torch.load(files[0], map_location="cpu")
 
     elif opt.loading_mode == "from_strong_precomputed": 
-        if 'span' in opt.prebuilt_index_dir:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.strong"))
+        if opt.precompute_with_spans:
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.gte"))
         else:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.strong"))
+            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.gte"))
 
         assert len(files) <= 1, 'more than one files'
         if len(files) == 0: # means precomputed one is not there, run one.
@@ -53,15 +53,45 @@ def load_dataset(opt, tokenizer):
         else:
             return torch.load(files[0], map_location="cpu")
 
-class ClusteredIndCropping(torch.utils.data.Dataset):
+
+class DocWiseIndCropping(torch.utils.data.Dataset):
+
+    def _preprocesing(self):
+        # in the original setup, truncate the document with the fixed length
+        n_before = len(self.documents)
+        documents = [doc for doc in self.documents if (len(doc) > self.chunk_length)]
+        n_after = len(documents)
+        print('The number of documents (before/after) preprocessing', n_before, n_after)
+        return document
+
+    def _replicate_preprocesing(self, min_length):
+        # in the original setup, truncate the document with the fixed length
+        n_before = len(self.documents)
+        # T: the normal-length document. F: the document has shorter length
+        documents_T = [doc for doc in self.documents if len(doc) > self.chunk_length]
+        documents_F = [doc for doc in self.documents if len(doc) <= self.chunk_length]
+        n_duplicate = (self.chunk_length // min_length)
+        ## replicate the docuemnt so that meets the need of independent cropping
+        documents_F = [(doc * n_duplicate)[:self.chunk_length] for doc in documents_F if len(doc) > min_length]
+
+        documents = documents_T + documents_F
+        n_after = len(documents)
+        print('The number of documents (before/after) preprocessing', n_before, n_after)
+        return documents
 
     def __init__(self, opt, documents, tokenizer):
         super().__init__()
-        self.documents = [d for d in documents if len(d) > opt.chunk_length]
+        self.documents = documents
         self.chunk_length = opt.chunk_length
         self.tokenizer = tokenizer
         self.opt = opt
         self.opt.mask_id = tokenizer.mask_token_id 
+        self.preprocessing = opt.preprocessing
+
+        if opt.preprocessing == 'replicate':
+            self.documents = self._replicate_preprocesing(min_length=32)
+        else:
+            self.documents = self._preprocesing()
 
         # span attrs
         self.spans = None
@@ -143,6 +173,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
         return n_clusters_used
 
     def _select_spans(self, index):
+        if self.select_span_mode == 'none':
+            return None
+
         candidates, scores = list(zip(*self.spans[index]))
         if self.select_span_mode == 'weighted':
             span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
@@ -150,8 +183,6 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
             span_tokens = candidates[0]
         elif self.select_span_mode == 'random':
             span_tokens = random.choices(candidates, k=1)[0] 
-        else:
-            span_tokens = None
         return span_tokens
 
     def __getitem__(self, index):
@@ -174,8 +205,9 @@ class ClusteredIndCropping(torch.utils.data.Dataset):
 
         if span_tokens is not None:
             span_tokens = add_bos_eos(span_tokens, bos, eos)
-
-        return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens, "data_index": index}
+            return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens, "data_index": index}
+        else:
+            return {"q_tokens": q_tokens, "c_tokens": c_tokens}
 
     def __len__(self):
         return len(self.documents)
