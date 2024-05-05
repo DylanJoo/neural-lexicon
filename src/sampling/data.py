@@ -53,7 +53,6 @@ def load_dataset(opt, tokenizer):
         else:
             return torch.load(files[0], map_location="cpu")
 
-
 class DocWiseIndCropping(torch.utils.data.Dataset):
 
     def _preprocesing(self):
@@ -173,7 +172,7 @@ class DocWiseIndCropping(torch.utils.data.Dataset):
         return n_clusters_used
 
     def _select_spans(self, index):
-        if self.select_span_mode == 'none':
+        if self.select_span_mode is None:
             return None
 
         candidates, scores = list(zip(*self.spans[index]))

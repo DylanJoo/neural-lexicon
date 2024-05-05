@@ -1,11 +1,11 @@
 import os
 import torch
 from transformers import Trainer as hf_trainer
-from transformers.utils import logging, is_datasets_available
+from transformers.utils import logging, is_datasets_available, SAFE_WEIGHTS_NAME
 from transformers.modeling_utils import unwrap_model
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
-from transformers.trainer_utils import seed_worker
+from transformers.trainer_utils import seed_worker, get_last_checkpoint
 from torch.utils.data import DataLoader, RandomSampler
 
 from src.sampling.index_utils import NegativeSpanMiner
@@ -14,6 +14,11 @@ logging.set_verbosity_info()
 logger = logging.get_logger("transformers")
 
 class Trainer(hf_trainer):
+    
+    def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
+        # model_dir = get_last_checkpoint(resume_from_checkpoint)
+        # safe_weights_file = os.path.join(resume_from_checkpoint, SAFE_WEIGHTS_NAME)
+        self.model.encoder.from_pretrained(resume_from_checkpoint)
 
     # [apply special sampler]
     def _get_train_sampler(self):
@@ -196,6 +201,9 @@ class Trainer(hf_trainer):
 
         Subclass and override for custom behavior.
         """
+        if "data_index" in inputs:
+            inputs['data_index'] = inputs['data_index'].long().detach().cpu().numpy()
+
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
         else:

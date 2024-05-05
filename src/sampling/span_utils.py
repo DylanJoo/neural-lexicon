@@ -33,7 +33,7 @@ def add_extracted_spans(
             tokens, mask = tokens.to(encoder.device), mask.to(encoder.device)
 
             batch_doc_embeddings = encoder.encode(tokens, mask)
-            batch_doc_embeddings = batch_doc_embeddings.detach().cpu()
+            batch_doc_embeddings = batch_doc_embeddings.detach().cpu().numpy()
 
             ### additional record doc embeddings
             if return_doc_embeddings and (by_spans is False):
@@ -57,11 +57,11 @@ def add_extracted_spans(
 
                 ### add average span embeddings
                 if return_doc_embeddings and (by_spans is True):
-                    candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
-                    all_doc_embeddings.append(candidate_embeddings.mean(0)[None, ...])
+                    avg_candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
+                    all_doc_embeddings.append(avg_candidate_embeddings.mean(0)[None, ...])
 
     if return_doc_embeddings:
-        return extracted_spans, torch.cat(all_doc_embeddings, dim=0).numpy()
+        return extracted_spans, np.vstack(all_doc_embeddings)
     else:
         return (extracted_spans, )
 
@@ -84,7 +84,7 @@ def calculate_span_embeddings(
         span_embeddings = span_embeddings.detach().cpu()
         ret.append(span_embeddings)
 
-    span_embeddings = torch.cat(ret)
+    span_embeddings = torch.cat(ret).numpy()
     return span_embeddings
 
 def get_candidate_spans(docs, ngram_range):

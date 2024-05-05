@@ -23,6 +23,8 @@ def calculate_spans_and_clusters(args, dataset_name):
             train_data_dir=f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
             chunk_length=256,
             loading_mode='from_scratch',
+            precompute_with_spans=None,
+            preprocessing='replicate'
     )
     dataset = load_dataset(data_opt, tokenizer)
     # dataset.documents = dataset.documents[:10] # shrink for debugging
@@ -42,6 +44,7 @@ def calculate_spans_and_clusters(args, dataset_name):
     print('span extraction done')
 
     ## [clustering]
+    print(doc_embeddings.shape)
     print('clustering start')
     N=args.num_clusters
     N_used = dataset.init_clusters(
@@ -80,17 +83,18 @@ if __name__ == '__main__':
     # faiss index
     parser.add_argument("--faiss_output", default=None, type=str)
     parser.add_argument("--doc_embeddings_by_spans", default=False, action='store_true')
+    # dataset
     args = parser.parse_args()
 
     for dataset_name in ['trec-covid']:
     # for dataset_name in ['scifact', 'scidocs']:
-        doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
+        print(dataset_name, 'spans and cluster precomputing')
 
-        if args.faiss_output:
-            TEMP_DIR = '/home/dju/indexes/temp'
+        doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
+        if args.faiss_output is not None:
             NegativeSpanMiner.save_index(
                     embed_vectors=doc_embeddings,
-                    index_dir=os.path.join(TEMP_DIR, args.faiss_output + dataset_name)
+                    index_dir=os.path.join('/home/dju/indexes/temp', args.faiss_output + dataset_name)
             )
             print('indexing done\n')
         else:

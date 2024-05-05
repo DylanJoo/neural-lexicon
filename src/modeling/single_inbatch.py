@@ -3,8 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import random
 from dataclasses import dataclass
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List, Mapping
 from transformers.modeling_outputs import BaseModelOutput
+# from .load_utils import load_state_dict_modified
 
 @dataclass
 class InBatchOutput(BaseModelOutput):
@@ -13,6 +14,7 @@ class InBatchOutput(BaseModelOutput):
     logs: Optional[Dict[str, torch.FloatTensor]] = None
 
 class InBatchInteraction(nn.Module):
+
     def __init__(
         self, 
         opt, 
@@ -73,7 +75,9 @@ class InBatchInteraction(nn.Module):
                     indices=data_index,
                     n=1, k0=0, k=100, 
                     exclude_overlap=True,
-                    return_token_ids=True
+                    return_token_ids=True,
+                    start_from_hit=True,
+                    debug=self.opt.my_debug
             )
             neg_vectors = self.encoder(
                     input_ids=neg_inputs[0].to(self.encoder.device),
@@ -109,6 +113,7 @@ class InBatchInteraction(nn.Module):
         logs.update({'loss_sent': loss, 'acc_sent': accuracy})
 
         loss_sp = 0.0
+        loss_distil = 0.0
         ## [st-sp]
         ### query-span & context-span contrastive 
         if span_tokens is not None and span_mask is not None:
@@ -119,13 +124,19 @@ class InBatchInteraction(nn.Module):
             )[0]
 
             if self.miner is not None: 
-                if self.miner.use_doc_by == 'no':
-                    neg_vectors = self.miner.span_depedent_from_docs(
+                # [todo] for stsp objective, see what's the better doc mining strategy
+                if self.opt.mine_neg_using == 'span':
+                    neg_inputs = self.miner.span_depedent_from_docs(
                             embeds=spemb.detach().clone().cpu(), 
                             indices=data_index,
-                            n=1, k0=0, k=50,
-                            return_token_ids=False
-                    ).to(self.encoder.device)
+                            n=1, k0=0, k=100,
+                            start_from_hit=True,
+                            return_token_ids=True
+                    )
+                    neg_vectors = self.encoder(
+                            input_ids=neg_inputs[0].to(self.encoder.device),
+                            attention_mask=neg_inputs[1].to(self.encoder.device)
+                    )[0]
             else:
                 neg_vectors = None
 
@@ -135,8 +146,13 @@ class InBatchInteraction(nn.Module):
             if neg_vectors is not None:
                 scores_qsp = torch.einsum("id, jd->ij", 
                         qemb / self.tau, torch.cat([spemb, neg_vectors], dim=0))
+                # add bidrectional
+                # scores_spq = torch.einsum("id, jd->ij", 
+                #         spemb / self.tau, torch.cat([qemb, neg_vectors], dim=0))
                 scores_csp = torch.einsum("id, jd->ij", 
                         cemb / self.tau, torch.cat([spemb, neg_vectors], dim=0))
+                # scores_spc = torch.einsum("id, jd->ij", 
+                #         spemb / self.tau, torch.cat([cemb, neg_vectors], dim=0))
             else:
                 scores_qsp = torch.einsum("id, jd->ij", qemb / self.tau_span, spemb)
                 scores_csp = torch.einsum("id, jd->ij", cemb / self.tau_span, spemb)

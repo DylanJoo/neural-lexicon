@@ -1,5 +1,6 @@
 import torch
 import random
+from tqdm import tqdm
 import numpy as np
 from dataclasses import dataclass
 from pyserini.encode import FaissRepresentationWriter
@@ -16,7 +17,7 @@ class PRFDenseSearchResult:
 class NegativeSpanMiner(FaissSearcher):
     """ Index spans for every documents, """
 
-    def __init__(self, dataset, tokenizer, index_dir=None, use_doc_by='doc'):
+    def __init__(self, dataset, tokenizer, index_dir=None):
 
         self.spans = dataset.spans
         self.clusters = dataset.clusters
@@ -32,8 +33,6 @@ class NegativeSpanMiner(FaissSearcher):
         else:
             self.index, self.docids = self.load_index(index_dir)
 
-        self.use_doc_by = use_doc_by
-
     @staticmethod
     def save_index(embed_vectors, index_dir=None):
 
@@ -43,7 +42,7 @@ class NegativeSpanMiner(FaissSearcher):
         embed_ids = list(range(n))
 
         with embedding_writer:
-            for s, e in batch_iterator(embed_ids, 128, True):
+            for s, e in tqdm(batch_iterator(embed_ids, 128, True)):
                 embedding_writer.write({
                     "id": embed_ids[s:e], "vector": embed_vectors[s:e]
                 })
@@ -58,7 +57,9 @@ class NegativeSpanMiner(FaissSearcher):
         k0=0, 
         k=100, 
         exclude_overlap=True,
+        start_from_hit=True,
         return_token_ids=False,
+        debug=None,
     ):
         """
         param
@@ -69,6 +70,7 @@ class NegativeSpanMiner(FaissSearcher):
         k: int, the threshold of negative samples
         exclude_overlap: bool, remove the docs from overlap, preventing false neg.
         return_token_ids: bool, return the token ids, thus the graident can propagate thru
+        debug: bool, use the control the new setting.
 
         return
         ------
@@ -98,8 +100,6 @@ class NegativeSpanMiner(FaissSearcher):
                 overlap_1 = np.in1d(I1_i, I2_i)
                 overlap_2 = np.in1d(I2_i, I1_i)
 
-                overlap_rate.append( sum(overlap_1) / (k-k0) )
-
                 if exclude_overlap:
                     I_i = np.append(I1_i[~overlap_1], I2_i[~overlap_2])
                     V_i = np.append(V1_i[~overlap_1], V2_i[~overlap_2], axis=0)
@@ -109,18 +109,41 @@ class NegativeSpanMiner(FaissSearcher):
                     V_i = np.append(V1_i, V2_i, axis=0)
                     S_i = np.append(S1_i, S2_i)
 
+                overlap_rate.append( sum(overlap_1) / (k-k0) )
+
                 ### reordering the lists via scores
                 I_i = I_i[np.argsort(S_i)[::-1]]
                 V_i = V_i[np.argsort(S_i)[::-1]]
 
-                ## exclude the hit as well
+                if debug:
+                    y = self.clusters[idx]
+
+                    ## (1) same-cluser-first-negative
+                    hit_cluster = [1 if self.clusters[ii] == y else 2 \
+                            for ii in I_i]
+                    I_i = I_i[np.argsort(hit_cluster)]
+                    V_i = V_i[np.argsort(hit_cluster)]
+
+                    ## (2) diff-cluster-first-negative
+                    # hit_cluster = [\
+                    #         1 if self.clusters[ii] == y else 0 for ii in I_i
+                    # ]
+                    #
+                    # I_i = I_i[np.argsort(hit_cluster).flatten()]
+                    # V_i = V_i[np.argsort(hit_cluster).flatten()]
+
+                ## find the hit if any
                 try:
                     hit = I_i.index(idx)
                 except:
-                    hit = 0
+                    hit = -1
 
-                ## find the hit and start from it 
-                j = hit + 1
+                if start_from_hit:
+                    j = hit + 1
+                else:
+                    j = 0
+
+                ## exclude repetitive and exclude the document
                 while (j < len(I_i)):
                     if (I_i[j] not in batch_docids) and (j not in indices):
                         batch_docids.append( I_i[j] )
@@ -129,7 +152,7 @@ class NegativeSpanMiner(FaissSearcher):
                     j += 1
 
         # reorganize
-        self.additional_log = {'overlap_rate': np.mean(overlap_rate)}
+        self.additional_log.update({'overlap_rate': np.mean(overlap_rate)})
         batch_docids = batch_docids[:N]
         batch = torch.stack(batch)
         batch = batch[:N]
@@ -140,11 +163,7 @@ class NegativeSpanMiner(FaissSearcher):
                 candidates, scores = list(zip(*self.spans[docid]))
                 span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
                 batch_token_ids.append(add_bos_eos(span_tokens, self.bos, self.eos))
-            # use documents [deprecated]
-            # batch_token_ids = list(
-            #         add_bos_eos(self.documents[docid][:128], self.bos, self.eos) \
-            #                 for docid in batch_docids
-            # )
+
             batch_inputs = build_mask(batch_token_ids)
             return batch_inputs
         else:
@@ -157,7 +176,8 @@ class NegativeSpanMiner(FaissSearcher):
         n=1, 
         k0=0, 
         k=20, 
-        return_token_ids=False
+        start_from_hit=True,
+        return_token_ids=False,
     ):
         """
         param
@@ -177,6 +197,7 @@ class NegativeSpanMiner(FaissSearcher):
         ## search topK for each representative-span
         S, I, V = self.index.search_and_reconstruct(embeds, k)
 
+        arg_max_gap = []
         batch_docids = []
         batch = []
         N = embeds.shape[0] * n # n*batch_size of negative
@@ -185,33 +206,45 @@ class NegativeSpanMiner(FaissSearcher):
 
                 I_i, V_i, S_i = I[i], V[i], S[i]
 
-                ## exclude the hit 
+                ## find the hit if any
                 try:
-                    hit = I_i.index(idx) + 1
+                    hit = I_i.index(idx)
                 except:
                     hit = -1
 
-                ## find the hardest 
-                #### sort by difference(gap)
+                ## find the hardest. sort by difference(gap)
                 J = argdiff(S_i) 
 
-                j = 0
-                while (J[j] == hit) or (I_i[j] in batch_docids):
-                    j += 1
+                if start_from_hit:
+                    select = hit + 1
+                else:
+                    select = 0
 
-                batch_docids.append( I_i[j] ) 
-                batch.append( torch.tensor(V_i[j, :]) )
+                while (select < len(I_i)):
+                    if select == hit:
+                        select += 1
+
+                    j = J[select]
+                    if (I_i[j] not in batch_docids) and (j not in indices):
+                        batch_docids.append( I_i[J[j]] ) 
+                        batch.append( torch.tensor(V_i[j, :]) )
+                        select = len(I_i)
+                        arg_max_gap.append(j)
+                    select += 1
 
         # reorganize
+        self.additional_log.update({'arg_max_gap': np.mean(arg_max_gap)})
         batch_docids = batch_docids[:N]
         batch = torch.stack(batch)
         batch = batch[:N]
 
         if return_token_ids:
-            batch_token_ids = list(
-                    add_bos_eos(self.documents[docid][:128], self.bos, self.eos) \
-                            for docid in batch_docids
-            )
+            batch_token_ids = []
+            for docid in batch_docids:
+                candidates, scores = list(zip(*self.spans[docid]))
+                span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
+                batch_token_ids.append(add_bos_eos(span_tokens, self.bos, self.eos))
+
             batch_inputs = build_mask(batch_token_ids)
             return batch_inputs
         else:

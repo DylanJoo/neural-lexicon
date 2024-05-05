@@ -29,6 +29,8 @@ class ModelOptions:
     gamma: float = field(default=1.0)
     # delta: float = field(default=0.0)
     mine_neg_using: Optional[str] = field(default=None)
+    # 
+    my_debug: Optional[bool] = field(default=False)
 
 @dataclass
 class DataOptions:
@@ -41,7 +43,7 @@ class DataOptions:
     ratio_max: Optional[float] = field(default=0.5)
     augmentation: Optional[str] = field(default=None)
     prob_augmentation: Optional[float] = field(default=0.0)
-    select_span_mode: Optional[str] = field(default='no')
+    select_span_mode: Optional[str] = field(default=None)
     # Negative miner
     prebuilt_index_dir: Optional[str] = field(default='no')
     precompute_with_spans: bool = field(default=False)
@@ -59,8 +61,6 @@ class TrainOptions(TrainingArguments):
     save_strategy: str = field(default='steps')
     save_steps: int = field(default=1000)
     eval_steps: int = field(default=1000)
-    warmup_ratio: float = field(default=0.0)
-    warmup_steps: int = field(default=0)
     overwrite_output_dir: bool = field(default=True)
     evaluation_strategy: Optional[str] = field(default='no')
     per_device_train_batch_size: int = field(default=2)
