@@ -8,3 +8,6 @@
 keybert/
 parsed/
 archived/
+wandb/
+
+runs/

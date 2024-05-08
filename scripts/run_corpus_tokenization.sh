@@ -11,16 +11,15 @@
 # Set-up the environment.
 source ${HOME}/.bashrc
 conda activate exa-dm_env
-TEMP=${HOME}/datasets/temp
 
 cd ${HOME}/neural-lexicon/
 
 for dataset in trec-covid scidocs scifact;do
-    mkdir -p ${TEMP}/${dataset}/
+    mkdir -p ${HOME}/datasets/beir/${dataset}/dw-ind-cropping
     python preprocess/tokenization.py \
         --tokenizer bert-base-uncased \
         --datapath ${HOME}/datasets/beir/${dataset}/collection/corpus.jsonl \
         --overwrite \
-        --outdir ${TEMP}/${dataset}
+        --outdir ${HOME}/datasets/beir/${dataset}/dw-ind-cropping
     echo done
 done

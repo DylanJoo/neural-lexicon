@@ -14,6 +14,8 @@ def save(tensor, split_path):
     with open(split_path, 'wb') as fout:
         torch.save(tensor, fout)
 
+# revise the process with 'document-wise', each list refers to a single document. 
+# the length of token lists eqaul to number of documents in corpus
 def apply_tokenizer(path, tokenizer, normalize_text=False):
     alltokens = []
     lines = []
