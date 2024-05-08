@@ -11,3 +11,7 @@ archived/
 wandb/
 
 runs/
+
+infer.sh
+train.sh
+

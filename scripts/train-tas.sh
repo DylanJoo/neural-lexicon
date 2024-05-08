@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=tas.w
+#SBATCH --job-name=tas
 #SBATCH --partition gpu
 #SBATCH --gres=gpu:2
 #SBATCH --mem=15G
@@ -16,8 +16,9 @@ backbone=contriever
 ckpt=facebook/contriever
 
 # Start the experiment.
-for dataset in scifact scidocs;do
-for method in dev;do
+for dataset in scidocs scifact;do
+for dummy in 0.0;do
+    method=dev.tas
     exp=${method}
 
     # Go
@@ -28,18 +29,18 @@ for method in dev;do
         --loading_mode from_precomputed \
         --output_dir models/ckpt/${backbone}-${exp}/${dataset} \
         --per_device_train_batch_size 32 \
-        --temperature 0.1 --temperature_span 0.5 \
+        --temperature 0.1 --temperature_span 0.1 \
         --select_span_mode weighted \
         --pooling mean --span_pooling mean \
-        --alpha 1.0 --beta 0.0 \
+        --alpha 0.0 --beta 1.0 --gamma 0.5 \
         --do_tas_doc \
         --chunk_length 256 \
         --save_strategy steps \
-        --max_steps 2000 \
-        --save_steps 1000 \
-        --save_total_limit 2 \
+        --max_steps 2500 \
+        --save_steps 500 \
+        --save_total_limit 5 \
         --warmup_ratio 0.1 \
         --fp16 --wandb_project tas_span \
-        --report_to wandb --run_name ${dataset}-${exp}.tas.weighted
+        --report_to wandb --run_name ${dataset}-${exp}
 done
 done
