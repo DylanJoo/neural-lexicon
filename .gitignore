@@ -11,3 +11,7 @@ archived/
 wandb/
 
 runs/
+
+span-testing.py
+unit_test.py
+
