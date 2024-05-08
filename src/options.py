@@ -46,7 +46,7 @@ class DataOptions:
     select_span_mode: Optional[str] = field(default=None)
     # Negative miner
     prebuilt_index_dir: Optional[str] = field(default='no')
-    precompute_with_spans: bool = field(default=False)
+    # precompute_with_spans: bool = field(default=False)
     preprocessing: Optional[str] = field(default='replicate')
 
 @dataclass
@@ -58,7 +58,7 @@ class TrainOptions(TrainingArguments):
     do_eval: bool = field(default=False)
     max_steps: int = field(default=-1)
     num_train_epochs: int = field(default=3)
-    save_strategy: str = field(default='steps')
+    save_strategy: str = field(default='epoch')
     save_steps: int = field(default=1000)
     eval_steps: int = field(default=1000)
     overwrite_output_dir: bool = field(default=True)

@@ -1,11 +1,13 @@
 import os
 import torch
+import torch.distributed as dist
 from transformers import Trainer as hf_trainer
 from transformers.utils import logging, is_datasets_available, SAFE_WEIGHTS_NAME
 from transformers.modeling_utils import unwrap_model
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
 from transformers.trainer_utils import seed_worker, get_last_checkpoint
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from torch.utils.data import DataLoader, RandomSampler
 
 from src.sampling.index_utils import NegativeSpanMiner
@@ -13,11 +15,23 @@ from src.sampling.index_utils import NegativeSpanMiner
 logging.set_verbosity_info()
 logger = logging.get_logger("transformers")
 
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+OPTIMIZER_NAME = "optimizer.pt"
+OPTIMIZER_NAME_BIN = "optimizer.bin"
+SCHEDULER_NAME = "scheduler.pt"
+SCALER_NAME = "scaler.pt"
+FSDP_MODEL_NAME = "pytorch_model_fsdp"
+
 class Trainer(hf_trainer):
-    
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_ddp = dist.is_initialized()
+        self._dist_loss_scale_factor = dist.get_world_size() if self.is_ddp else 1
+        self.curret_epoch = 0
+
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
-        # model_dir = get_last_checkpoint(resume_from_checkpoint)
-        # safe_weights_file = os.path.join(resume_from_checkpoint, SAFE_WEIGHTS_NAME)
         self.model.encoder.from_pretrained(resume_from_checkpoint)
 
     # [apply special sampler]
@@ -202,7 +216,10 @@ class Trainer(hf_trainer):
         Subclass and override for custom behavior.
         """
         if "data_index" in inputs:
-            inputs['data_index'] = inputs['data_index'].long().detach().cpu().numpy()
+            if self.is_ddp:
+                inputs['data_index'] = inputs['data_index'].long()
+            else:
+                inputs['data_index'] = inputs['data_index'].long().detach().cpu().numpy() 
 
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
@@ -211,10 +228,12 @@ class Trainer(hf_trainer):
 
         outputs = model(**inputs)
 
-        # if self.state.global_step % 10 == 0:
-        #     for i in range(3):
-        #         print(self.tokenizer.decode(inputs['span_tokens'][i], add_speicial_tokens=False))
-        #         print(self.tokenizer.decode(inputs['q_tokens'][i], add_speicial_tokens=False))
+        if self.state.global_step % 50 == 0:
+            print('===== Examples starts =====')
+            for i in range(3):
+                print(self.tokenizer.decode(inputs['span_tokens'][i], add_speicial_tokens=False))
+                print(self.tokenizer.decode(inputs['q_tokens'][i], add_speicial_tokens=False))
+            print('===== Example ends =====')
 
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
@@ -262,9 +281,7 @@ class Trainer(hf_trainer):
         self.model.encoder.save_pretrained(
             output_dir, state_dict=model.state_dict(), safe_serialization=self.args.save_safetensors
         )
-
-        if self.tokenizer is not None:
-            self.tokenizer.save_pretrained(output_dir)
-
+        # if self.tokenizer is not None:
+        #     self.tokenizer.save_pretrained(output_dir)
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, 'training_args.bin'))
