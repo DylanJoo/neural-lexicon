@@ -10,7 +10,6 @@ from src.sampling.utils import batch_iterator
 
 import argparse
 
-
 def calculate_spans_and_clusters(args, dataset_name):
 
     # initialized encoders/tokenizers
@@ -23,7 +22,6 @@ def calculate_spans_and_clusters(args, dataset_name):
             train_data_dir=f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
             chunk_length=256,
             loading_mode='from_scratch',
-            precompute_with_spans=None,
             preprocessing='replicate'
     )
     dataset = load_dataset(data_opt, tokenizer)
@@ -36,37 +34,21 @@ def calculate_spans_and_clusters(args, dataset_name):
             encoder,
             batch_size=args.batch_size,
             max_doc_length=384,
-            ngram_range=(2,3),
+            ngram_range=(args.min_ngrams, args.max_ngrams),
             top_k_spans=10,
-            return_doc_embeddings=True,
-            doc_embeddings_by_spans=args.doc_embeddings_by_spans
     )
     print('span extraction done')
 
-    ## [clustering]
-    print(doc_embeddings.shape)
-    print('clustering start')
-    N=args.num_clusters
-    N_used = dataset.init_clusters(
-            doc_embeddings, 
-            n_clusters=N,
-            min_points_per_centroid=32,
-            device=args.device
-    )
-    print('clustering done')
-
     ## [save and load (testing)]
     path = os.path.join(f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
-                        args.saved_file_format.format(K, N_used))
+                        args.saved_file_format.format(K))
     dataset.save(path)
 
     ## [quick testing]
     data_opt.loading_mode = args.loading_mode
-    data_opt.precompute_with_spans = args.doc_embeddings_by_spans
     dataset = load_dataset(data_opt, tokenizer)
 
     print('checking span\n', dataset.spans[0])
-    print('checking cluster\n', dataset.clusters[0])
 
     return doc_embeddings
 
@@ -74,6 +56,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder_name_or_path", default='contriever', type=str)
     parser.add_argument("--tokenizer_name_or_path", default=None, type=str)
+    parser.add_argument("--min_ngrams", default=2, type=int)
+    parser.add_argument("--max_ngrams", default=3, type=int)
     parser.add_argument("--num_spans", default=10, type=int)
     parser.add_argument("--num_clusters", default=0.05, type=float)
     parser.add_argument("--batch_size", default=128, type=int)
@@ -86,8 +70,8 @@ if __name__ == '__main__':
     # dataset
     args = parser.parse_args()
 
-    for dataset_name in ['trec-covid']:
-    # for dataset_name in ['scifact', 'scidocs']:
+    # for dataset_name in ['trec-covid']:
+    for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
         print(dataset_name, 'spans and cluster precomputing')
 
         doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
