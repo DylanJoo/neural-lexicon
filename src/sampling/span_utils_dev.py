@@ -4,9 +4,11 @@ import collections
 from scipy.sparse import csr_matrix
 import numpy as np
 from nltk.util import ngrams
+from sklearn.metrics.pairwise import cosine_similarity
 
 from .data_utils import add_bos_eos, build_mask # integrate
-from .utils import cosine_top_k, mmr_top_k
+# from data_utils import add_bos_eos, build_mask # unit
+from .utils import batch_iterator
 
 def add_extracted_spans(
     encoder, 
@@ -18,7 +20,6 @@ def add_extracted_spans(
     bos_id=101,
     eos_id=102,
     return_doc_embeddings=False, 
-    span_selection='cosine',
     by_spans=False
 ):
     with torch.no_grad():
@@ -49,31 +50,26 @@ def add_extracted_spans(
                 candidates = [candidate_span_mapping[j] for j in candidate_indices]
                 candidate_embeddings = span_embeddings[candidate_indices]
 
-                if 'cosine' in span_selection:
-                    scores = cosine_similarity(
-                            doc_embedding.reshape(1, -1), candidate_embeddings
-                    )
-                    key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
-                elif 'mmr' in span_selection:
-                    mmr_top_k(
-                            doc_embedding
-                    )
-                    pass
-
-                extracted_spans.append(key_spans)
+                ### use the MMR implemted by keyBERT
+                spans = mmr(
+                        doc_embedding.reshape(1, -1), 
+                        candidate_embeddings, 
+                        candidates,
+                        top_k_spans, 
+                        diversity=0.2
+                )
+                extracted_spans.append(spans)
 
                 ### add average span embeddings
-                if return_doc_embeddings and (by_spans is True):
-                    avg_candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
-                    all_doc_embeddings.append(avg_candidate_embeddings.mean(0)[None, ...])
+                # if return_doc_embeddings and (by_spans is True):
+                #     avg_candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
+                #     all_doc_embeddings.append(avg_candidate_embeddings.mean(0)[None, ...])
 
-    print('encoding fininshed. start stacking')
     if return_doc_embeddings:
         return extracted_spans, np.vstack(all_doc_embeddings)
     else:
         return (extracted_spans, )
 
-# orginal independent calculation
 def calculate_span_embeddings(
     ngram_mapping, 
     encoder=None,
@@ -97,12 +93,20 @@ def calculate_span_embeddings(
     return span_embeddings
 
 
-def get_candidate_spans(docs, ngram_range):
+def get_candidate_spans(docs, ngram_range, return_id_in_context=False):
+    """
+    return_id_in_context: 
+        use the index of position in the document context instead but not the actucal token id.
+    """
     bag_of_features = collections.defaultdict()
     bag_of_features.default_factory = bag_of_features.__len__
     j_indices, indptr = [], [0]
 
     for doc in docs:
+
+        if return_id_in_context:
+            doc = list(range(len(doc)))
+
         # remove the redundant ngrams
         feature_set = set([ngram_tuple for n in \
                 range(ngram_range[0], ngram_range[1]+1) for ngram_tuple in \
@@ -113,7 +117,6 @@ def get_candidate_spans(docs, ngram_range):
         for feature in feature_set:
             idx = bag_of_features[feature]
             feature_indices += [idx]
-
         j_indices.extend(feature_indices)
         indptr.append(len(j_indices))
 
@@ -126,12 +129,4 @@ def get_candidate_spans(docs, ngram_range):
     # reverse the key value of bof
     feature_mapping = {v: list(k) for k, v in bag_of_features.items()}
     return X, feature_mapping
-
-def batch_iterator(iterable, size=1, return_index=False):
-    l = len(iterable)
-    for ndx in range(0, l, size):
-        if return_index:
-            yield (ndx, min(ndx + size, l))
-        else:
-            yield iterable[ndx:min(ndx + size, l)]
 

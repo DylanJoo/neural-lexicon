@@ -29,29 +29,18 @@ def load_dataset(opt, tokenizer):
         dataset = DocWiseIndCropping(opt, list_of_token_ids, tokenizer)
         return dataset
 
-    elif opt.loading_mode == "from_precomputed": 
-        if opt.precompute_with_spans:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.ctrv"))
-        else:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.ctrv"))
-        assert len(files) <= 1, 'more than one files'
+    else:
+        if opt.loading_mode == "doc2spans": 
+            files = glob.glob(os.path.join(opt.train_data_dir, "*doc2spans*.pt.ctrv"))
+            assert len(files) <= 1, 'more than one files'
+        elif opt.loading_mode == "doc2spans_gte": 
+            files = glob.glob(os.path.join(opt.train_data_dir, "*doc2spans*.pt.gte"))
+        elif opt.loading_mode == "dev": 
+            files = glob.glob(os.path.join(opt.train_data_dir, "*dev*.pt.ctrv"))
 
         if len(files) == 0: # means precomputed one is not there, run one.
             sys.exit('run the `precompute.py` first')
-        else:
-            return torch.load(files[0], map_location="cpu")
-
-    elif opt.loading_mode == "from_strong_precomputed": 
-        if opt.precompute_with_spans:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.spans*.pt.gte"))
-        else:
-            files = glob.glob(os.path.join(opt.train_data_dir, "*by.doc*.pt.gte"))
-
-        assert len(files) <= 1, 'more than one files'
-        if len(files) == 0: # means precomputed one is not there, run one.
-            sys.exit('run the `precompute.py` first')
-        else:
-            return torch.load(files[0], map_location="cpu")
+        return torch.load(files[0], map_location="cpu")
 
 class DocWiseIndCropping(torch.utils.data.Dataset):
 
@@ -96,7 +85,6 @@ class DocWiseIndCropping(torch.utils.data.Dataset):
         self.spans = None
         self.spans_msim = 0 # the larger the better
         self.select_span_mode = opt.select_span_mode
-        self.get_from_span = False
 
         # cluster attrs
         self.clusters = None

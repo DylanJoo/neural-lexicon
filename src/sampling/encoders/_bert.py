@@ -34,7 +34,7 @@ class BertEmbeddings(BertModel):
         else:
             return token_embeddings.mean(dim=1)
 
-    def forward(self, input_ids, attention_mask, pooling, **kwargs):
+    def forward(self, input_ids, attention_mask, pooling, return_token_embeddings=False, **kwargs):
         model_output = super().forward(
                 input_ids=input_ids, 
                 attention_mask=attention_mask, 
@@ -50,6 +50,11 @@ class BertEmbeddings(BertModel):
         elif pooling == 'mean':
             emb = self._mean_pooling(last_hidden, attention_mask)
 
-        return emb
+        if return_token_embeddings:
+            last_hidden[:, 0] = 0
+            last_hidden[:, -1] = 0
+            return emb, last_hidden # remove the CLS tokens
+        else:
+            return emb
 
 
