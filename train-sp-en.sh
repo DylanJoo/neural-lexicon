@@ -1,5 +1,5 @@
 #!/bin/sh
-#SBATCH --job-name=BASE
+#SBATCH --job-name=SP
 #SBATCH --partition gpu
 #SBATCH --gres=gpu:nvidia_titan_v:2
 #SBATCH --mem=15G
@@ -22,7 +22,8 @@ ckpt=facebook/contriever
 # Start the experiment.
 # for dataset in scidocs scifact;do
 for dataset in scidocs scifact;do
-    method=baseline
+for gamma in 0.0 0.5;do
+    method=sp-en-$gamma
     exp=${method}
 
     # Go
@@ -36,7 +37,7 @@ for dataset in scidocs scifact;do
         --per_device_train_batch_size 32 \
         --temperature 0.1 --temperature_span 0.1 \
         --pooling mean --span_pooling mean \
-        --alpha 1.0 --beta 0.0 --gamma 0.0 \
+        --alpha 1.0 --beta 1.0 --gamma ${gamma} \
         --chunk_length 256 \
         --save_strategy epoch \
         --num_train_epochs 4 \
@@ -44,4 +45,5 @@ for dataset in scidocs scifact;do
         --warmup_ratio 0.1 \
         --fp16 --wandb_project ssldr-exp1 \
         --report_to wandb --run_name ${dataset}-${exp}
+done
 done
