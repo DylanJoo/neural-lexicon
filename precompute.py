@@ -1,85 +1,99 @@
 import os
 import torch
-from src.sampling.encoders import BERTEncoder
+import argparse
+import logging
+
 from transformers import AutoTokenizer
 
 from src.options import DataOptions
-from src.sampling.data import load_dataset
-from src.sampling.index_utils import NegativeSpanMiner
+from src.sampling.data import DatasetIndependentCropping
 from src.sampling.utils import batch_iterator
+from src.sampling.miner import NegativeSpanMiner
+from src.sampling.encoders import BERTEncoder
 
-import argparse
+from pyserini.encode import FaissRepresentationWriter
 
-def calculate_spans_and_clusters(args, dataset_name):
+logger = logging.getLogger(__name__)
 
-    # initialized encoders/tokenizers
-    encoder = BERTEncoder(args.encoder_name_or_path, device=args.device)
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name_or_path or args.encoder_name_or_path)
+def main(args):
+
+    ## [setup] initialized encoders/tokenizers
+    encoder = BERTEncoder(args.encoder_name_or_path, device=args.device, pooling='mean')
+    tokenizer = AutoTokenizer.from_pretrained(
+            args.tokenizer_name_or_path or args.encoder_name_or_path
+    )
     tokenizer.bos_token = '[CLS]'
     tokenizer.eos_token = '[SEP]'
 
+    ### prepare arguments
     data_opt = DataOptions(
-            train_data_dir=f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
+            corpus_jsonl=args.corpus_jsonl,
+            corpus_spans_jsonl=args.corpus_spans_jsonl,
             chunk_length=256,
-            loading_mode='from_scratch',
-            preprocessing='replicate'
+            min_chunk_length=32,
+            select_span_mode=None
     )
-    dataset = load_dataset(data_opt, tokenizer)
-    # dataset.documents = dataset.documents[:10] # shrink for debugging
+    dataset = DatasetIndependentCropping(data_opt, tokenizer)
 
     ## [span extraction]
-    K=args.num_spans
-    print('span extraction start')
-    doc_embeddings = dataset.init_spans(
-            encoder,
-            batch_size=args.batch_size,
-            max_doc_length=384,
-            ngram_range=(args.min_ngrams, args.max_ngrams),
-            top_k_spans=10,
-    )
-    print('span extraction done')
-
-    ## [save and load (testing)]
-    path = os.path.join(f'/home/dju/datasets/beir/{dataset_name}/dw-ind-cropping', 
-                        args.saved_file_format.format(K))
-    dataset.save(path)
+    logger.info('span extraction start')
+    spans_writer = open(args.corpus_spans_jsonl, 'w') 
+    if args.faiss_index_dir:
+        index_writer = FaissRepresentationWriter(args.faiss_index_dir, encoder.model.config.hidden_size)
+        with index_writer:
+            dataset.init_spans_and_index(
+                    encoder,
+                    batch_size=args.batch_size,
+                    max_doc_length=384,
+                    ngram_range=(args.min_ngrams, args.max_ngrams),
+                    stride=args.stride,
+                    top_k=args.num_spans,
+                    decontextualized=args.decontextualized,
+                    spans_writer=spans_writer,
+                    index_writer=index_writer
+            )
+    else:
+        dataset.init_spans_and_index(
+                encoder,
+                batch_size=args.batch_size,
+                max_doc_length=384,
+                ngram_range=(args.min_ngrams, args.max_ngrams),
+                stride=args.stride,
+                top_k=args.num_spans,
+                decontextualized=args.decontextualized,
+                spans_writer=spans_writer,
+                index_writer=None
+        )
+    spans_writer.close()
+    logger.info('span extraction done')
 
     ## [quick testing]
-    data_opt.loading_mode = args.loading_mode
-    dataset = load_dataset(data_opt, tokenizer)
-
-    print('checking span\n', dataset.spans[0])
-
-    return doc_embeddings
+    data_opt.select_span_mode = 'weighted'
+    dataset = DatasetIndependentCropping(data_opt, tokenizer)
+    print('checking\n', dataset[0])
+    print(tokenizer.decode(dataset[0]['q_tokens'].long()))
+    print(tokenizer.decode(dataset[0]['span_tokens'].long()))
+    print(tokenizer.decode(dataset[0]['span_tokens'].long()))
+    print(tokenizer.decode(dataset[0]['span_tokens'].long()))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--encoder_name_or_path", default='contriever', type=str)
     parser.add_argument("--tokenizer_name_or_path", default=None, type=str)
+    parser.add_argument("--corpus_jsonl", default=None, type=str, required=True)
+    parser.add_argument("--corpus_spans_jsonl", default=None, type=str, required=True)
+    parser.add_argument("--faiss_index_dir", default=None, type=str)
+    parser.add_argument("--decontextualized", default=False, action='store_true')
     parser.add_argument("--min_ngrams", default=2, type=int)
     parser.add_argument("--max_ngrams", default=3, type=int)
+    parser.add_argument("--stride", default=1, type=int)
     parser.add_argument("--num_spans", default=10, type=int)
-    parser.add_argument("--num_clusters", default=0.05, type=float)
     parser.add_argument("--batch_size", default=128, type=int)
-    parser.add_argument("--saved_file_format", default='doc.span.{}.cluster.{}.pt', type=str, required=True)
-    parser.add_argument("--loading_mode", default=None, type=str, required=True)
     parser.add_argument("--device", default='cpu', type=str)
-    # faiss index
-    parser.add_argument("--faiss_output", default=None, type=str)
-    parser.add_argument("--doc_embeddings_by_spans", default=False, action='store_true')
-    # dataset
     args = parser.parse_args()
 
-    # for dataset_name in ['trec-covid']:
-    for dataset_name in ['scifact', 'scidocs', 'trec-covid']:
-        print(dataset_name, 'spans and cluster precomputing')
+    print(f'precomuting preliminary data for {args.corpus_jsonl}.')
 
-        doc_embeddings = calculate_spans_and_clusters(args, dataset_name)
-        if args.faiss_output is not None:
-            NegativeSpanMiner.save_index(
-                    embed_vectors=doc_embeddings,
-                    index_dir=os.path.join('/home/dju/indexes/temp', args.faiss_output + dataset_name)
-            )
-            print('indexing done\n')
-        else:
-            print('NO indexing\n')
+    main(args)
+
+    print('done')

@@ -1,187 +1,191 @@
-"""
-Baseline: 
-    X. Independant cropping: positive sampling. length-wise, dataset-wise
-    1. Document-wise independent cropping: positive sampling, document-wise
-    2. Document-wise independent cropping: plus in-document negative samples
-"""
 import os
 import glob
 import sys
+import json
 import logging
 import random
 import datetime
 import torch
 import faiss
+from tqdm import tqdm
+from datasets import Dataset
 
-from .utils import batch_iterator
+from .utils import batch_iterator, cosine_top_k, get_candidate_spans
 from .data_utils import *
-from .span_utils import add_extracted_spans
-from .cluster_utils import FaissKMeans
 
 logger = logging.getLogger(__name__)
 
-# [todo] add the `doc.by.spans` type of data as new condition.
-def load_dataset(opt, tokenizer):
-    if opt.loading_mode == "from_scratch": 
-        files = glob.glob(os.path.join(opt.train_data_dir, "*corpus*.pkl"))
-        assert len(files) == 1, 'more than one files'
-        list_of_token_ids = torch.load(files[0], map_location="cpu")
-        dataset = DocWiseIndCropping(opt, list_of_token_ids, tokenizer)
-        return dataset
+class DatasetIndependentCropping(torch.utils.data.Dataset):
 
-    else:
-        if opt.loading_mode == "doc2spans": 
-            files = glob.glob(os.path.join(opt.train_data_dir, "*doc2spans*.pt.ctrv"))
-            assert len(files) <= 1, 'more than one files'
-        elif opt.loading_mode == "doc2spans_gte": 
-            files = glob.glob(os.path.join(opt.train_data_dir, "*doc2spans*.pt.gte"))
-        elif opt.loading_mode == "dev": 
-            files = glob.glob(os.path.join(opt.train_data_dir, "*dev*.pt.ctrv"))
-
-        if len(files) == 0: # means precomputed one is not there, run one.
-            sys.exit('run the `precompute.py` first')
-        return torch.load(files[0], map_location="cpu")
-
-class DocWiseIndCropping(torch.utils.data.Dataset):
-
-    def _preprocesing(self):
-        # in the original setup, truncate the document with the fixed length
-        n_before = len(self.documents)
-        documents = [doc for doc in self.documents if (len(doc) > self.chunk_length)]
-        n_after = len(documents)
-        print('The number of documents (before/after) preprocessing', n_before, n_after)
-        return document
-
-    def _replicate_preprocesing(self, min_length):
-        # in the original setup, truncate the document with the fixed length
-        n_before = len(self.documents)
-        # T: the normal-length document. F: the document has shorter length
-        documents_T = [doc for doc in self.documents if len(doc) > self.chunk_length]
-        documents_F = [doc for doc in self.documents if len(doc) <= self.chunk_length]
-        n_duplicate = (self.chunk_length // min_length)
-        ## replicate the docuemnt so that meets the need of independent cropping
-        documents_F = [(doc * n_duplicate)[:self.chunk_length] for doc in documents_F if len(doc) > min_length]
-
-        documents = documents_T + documents_F
-        n_after = len(documents)
-        print('The number of documents (before/after) preprocessing', n_before, n_after)
-        return documents
-
-    def __init__(self, opt, documents, tokenizer):
+    def __init__(self, opt, tokenizer):
         super().__init__()
-        self.documents = documents
-        self.chunk_length = opt.chunk_length
-        self.tokenizer = tokenizer
         self.opt = opt
-        self.opt.mask_id = tokenizer.mask_token_id 
-        self.preprocessing = opt.preprocessing
 
-        if opt.preprocessing == 'replicate':
-            self.documents = self._replicate_preprocesing(min_length=32)
-        else:
-            self.documents = self._preprocesing()
+        self.corpus_jsonl = opt.corpus_jsonl
+        self.bos_token_id = tokenizer.bos_token_id
+        self.eos_token_id = tokenizer.eos_token_id
+        self.mask_token_id = tokenizer.mask_token_id
+        self.opt.mask_token_id = tokenizer.mask_token_id # this is made for augmentation
 
-        # span attrs
-        self.spans = None
-        self.spans_msim = 0 # the larger the better
+        ## attrs
+        self.chunk_length = opt.chunk_length
+
+        ## preprocessing the raw corpus
+        self.corpus = self._load_corpus(do_replicate=(opt.preprocessing == 'replicate'))
+
+        ## span extraction
         self.select_span_mode = opt.select_span_mode
+        ### if the span has been precompute
+        if opt.select_span_mode in ['top1', 'weighted', 'random']:
+            self.spans = self._load_spans()
 
-        # cluster attrs
-        self.clusters = None
-        self.clusters_sse = 999 # the small the better
+        ## Independent croping
+        self.span_online_update = opt.span_online_update
 
-        # search attrs
-        self.nminer = None
+    def _load_corpus(self, corpus_jsonl=None, do_replicate=False):
 
-    def init_spans(
+        def replicate(x):
+            orig_len = len(x)
+            n_replicate = (self.chunk_length // orig_len)
+            x = x * max(n_replicate, 1)
+            return x
+
+        file = (corpus_jsonl or self.opt.corpus_jsonl)
+        self.corpus_jsonl = file
+
+        to_return = []
+        with open(file, 'r') as f:
+            for line in f:
+                doc = json.loads(line.strip())['input_ids']
+                if do_replicate and len(doc) > 0:
+                    doc = replicate(doc)
+                    to_return.append( doc )
+                else: 
+                    if len(doc) > self.chunk_length:
+                        to_return.append( doc )
+        return to_return
+
+    def _load_spans(self, spans_jsonl=None):
+        file = (spans_jsonl or self.opt.corpus_spans_jsonl)
+        self.spans_jsonl = file
+
+        to_return = []
+        with open(file, 'r') as f:
+            for line in f:
+                spans = json.loads(line.strip())['spans']
+                to_return.append( spans )
+        return to_return
+
+    def update_spans(self, data_indices, batch_d_tokens, batch_d_masks, batch_token_embeds, batch_doc_embeds):
+        for i, data_index in enumerate(data_indices):
+            token_embeds = batch_token_embeds[i]
+            doc_embed = batch_doc_embeds[i]
+
+            candidates, candidate_embeds = compute_span_embeds(
+                    inputs=batch_d_tokens[i],
+                    mask=batch_d_masks[i],
+                    ngram_range=(10, 10), 
+                    stride=10,
+                    token_embeds=token_embeds,
+                    span_pooling='mean',
+            )
+            topk_spans = cosine_top_k(doc_embed, candidates, candidate_embeds)
+            self.spans[data_index] = topk_spans
+
+    def init_spans_and_index(
         self,
         encoder, 
         batch_size=64, 
-        max_doc_length=256, 
+        max_doc_length=384, 
         ngram_range=(2,3), 
-        top_k_spans=5,
-        return_doc_embeddings=False,
-        doc_embeddings_by_spans=False
+        stride=1,
+        top_k=5,
+        decontextualized=True,
+        spans_writer=None,
+        index_writer=None
     ):
-        """ 
-        This is for precomputing process, 
-        The document for spannign is entire corpus,
-        but in fact doing them in batch.
         """
-        outputs = add_extracted_spans(
-                encoder=encoder,
-                documents=self.documents,
-                batch_size=batch_size,
-                max_doc_length=max_doc_length,
-                ngram_range=ngram_range,
-                top_k_spans=top_k_spans,
-                bos_id=self.tokenizer.bos_token_id,
-                eos_id=self.tokenizer.eos_token_id,
-                return_doc_embeddings=return_doc_embeddings,
-                by_spans=doc_embeddings_by_spans
-        )
-        self.spans = outputs[0]
-        return outputs[1] if return_doc_embeddings else 0
+        Params
+        ------
+        encoder
+        batch_size 
+        max_doc_length
+        ngram_range
+        top_k
 
-    # [TODO] some alternatives: minibatch
-    def init_clusters(
-        self,
-        embeddings,
-        embeddings_for_kmeans=None,
-        n_clusters=0.05,
-        min_points_per_centroid=32,
-        device='cpu',
-        **cluster_args
-    ):
-        """ 
-        Should work with constructing span embeddings 
         """
-        # this can be the subset of the entire doc embeddings
-        if embeddings_for_kmeans is None:
-            embeddings_for_kmeans = embeddings
+        with torch.no_grad():
 
-        # TAS exps on MARCO was set default to 5%
-        if isinstance(n_clusters, float):
-            n_clusters = embeddings_for_kmeans.shape[0] * n_clusters
+            for batch_docs in tqdm(
+                    batch_iterator(self.corpus, batch_size), \
+                    total=len(self.corpus)//batch_size+1
+            ):
+                # prepare document input with bos/eos
+                batch_tokens = [torch.Tensor(
+                    [self.bos_token_id]+d[:(max_doc_length-2)]+[self.eos_token_id]
+                ) for d in batch_docs]
 
-        n_clusters_used = min(embeddings_for_kmeans.shape[0] // min_points_per_centroid, n_clusters)
+                batch_tokens, mask = build_mask(batch_tokens)
+                batch_tokens, mask = batch_tokens.to(encoder.device), mask.to(encoder.device)
+                outputs = encoder.encode(batch_tokens, mask, return_token_embeddings=True)
 
-        kmeans = FaissKMeans(
-                n_clusters=n_clusters_used,
-                min_points_per_centroid=min_points_per_centroid,
-                device=device,
-                **cluster_args
-        )
-        kmeans.fit(embeddings_for_kmeans)
+                batch_tokens = batch_tokens.detach().cpu().numpy()
+                batch_doc_embeds = outputs[0].detach().cpu().numpy()
+                batch_tokens_embeds = outputs[1].detach().cpu().numpy()
+                mask = mask.detach().cpu().numpy()
 
-        self.clusters = kmeans.assign(embeddings).flatten()
-        self.clusters_sse = kmeans.inertia_
+                ## [build ngram candidates]
+                if decontextualized:
+                ### Assume spans is context-independent
+                    span_embeds, doc2spans, span2tokens = batch_compute_span_embeds(
+                            encoder=encoder,
+                            documents=batch_docs,
+                            bos=self.bos_token_id, eos=self.eos_token_id,
+                            batch_size=batch_size * 2, # as it's ngram, we can cram more in one batch
+                            ngram_range=ngram_range,
+                            stride=stride
+                    )
+                    for i, doc_embed in enumerate(batch_doc_embeds):
+                        candidate_indices = doc2spans[i].nonzero()[1]
+                        candidates = [span2tokens[j] for j in candidate_indices]
+                        candidate_embeds = span_embeds[candidate_indices]
 
-        return n_clusters_used
+                        topk_spans = cosine_top_k(doc_embed, candidates, candidate_embeds, top_k)
+                        spans_writer.write(json.dumps({"spans": topk_spans})+'\n')
+                else:
+                ### Assum spans is context-dependent
+                    for i, tokens in enumerate(batch_tokens):
+                        doc_embed = batch_doc_embeds[i] # mean 
+                        token_embeds = batch_tokens_embeds[i]
 
-    def _select_spans(self, index):
-        if self.select_span_mode is None:
-            return None
+                        candidates, candidate_embeds = compute_span_embeds(
+                                tokens, mask[i], ngram_range, stride, token_embeds, 'mean'
+                        )
 
-        candidates, scores = list(zip(*self.spans[index]))
-        if self.select_span_mode == 'weighted':
-            span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
-        elif self.select_span_mode == 'max':
-            span_tokens = candidates[0]
-        elif self.select_span_mode == 'random':
-            span_tokens = random.choices(candidates, k=1)[0] 
-        return span_tokens
+                        topk_spans = cosine_top_k(doc_embed, candidates, candidate_embeds, top_k)
+                        spans_writer.write(json.dumps({"spans": topk_spans})+'\n')
+
+                ## [encode document embeddings]
+                if index_writer is not None:
+                    n, d = batch_doc_embeds.shape
+                    index_writer.write({"id": [str(0)] * n, "vector": batch_doc_embeds})
+
 
     def __getitem__(self, index):
-        document = self.documents[index] # the crop is belong to one doc
+        document = self.corpus[index]
         span_tokens = self._select_spans(index)
 
-        start_idx = random.randint(0, len(document) - self.chunk_length)
-        end_idx = start_idx + self.chunk_length 
-        tokens = document[start_idx:end_idx] 
+        # check the token length of the document
+        offset =  len(document) - self.chunk_length
+        if offset > 0:
+            start_idx = random.randint(0, offset)
+            end_idx = start_idx + self.chunk_length 
+            tokens = document[start_idx:end_idx] 
+        else:
+            tokens = document
 
-        # normal chunking
-        bos, eos = self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
+        # select crops
+        bos, eos = self.bos_token_id, self.eos_token_id
         q_tokens = randomcrop(tokens, self.opt.ratio_min, self.opt.ratio_max)
         q_tokens = apply_augmentation(q_tokens, self.opt, span_tokens)
         q_tokens = add_bos_eos(q_tokens, bos, eos)
@@ -192,15 +196,37 @@ class DocWiseIndCropping(torch.utils.data.Dataset):
 
         if span_tokens is not None:
             span_tokens = add_bos_eos(span_tokens, bos, eos)
-            return {"q_tokens": q_tokens, "c_tokens": c_tokens, "span_tokens": span_tokens, "data_index": index}
+            return {"q_tokens": q_tokens, 
+                    "c_tokens": c_tokens, 
+                    "span_tokens": span_tokens,
+                    "data_index": index}
         else:
-            return {"q_tokens": q_tokens, "c_tokens": c_tokens}
+            return {"q_tokens": q_tokens, 
+                    "c_tokens": c_tokens, 
+                    "data_index": index}
+
+        # add entire doc
+        if self.span_online_update:
+            d_tokens = add_bos_eos(document[:self.chunk_length], bos, eos)
+            outputs.update({"d_tokens": d_tokens})
+
+        return outputs
 
     def __len__(self):
-        return len(self.documents)
+        return len(self.corpus)
 
-    def save(self, filename):
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        with open(filename, 'wb') as fout:
-            torch.save(self, fout)
+    def _select_spans(self, index):
+        if self.select_span_mode is None:
+            return None
+        if isinstance(index, int) is False:
+            return None
+
+        candidates, scores = list(zip(*self.spans[index]))
+        if self.select_span_mode == 'weighted':
+            span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
+        elif self.select_span_mode == 'max':
+            span_tokens = candidates[0]
+        elif self.select_span_mode == 'random':
+            span_tokens = random.choices(candidates, k=1)[0] 
+        return span_tokens
 

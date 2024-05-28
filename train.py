@@ -10,12 +10,9 @@ from dataclasses import asdict
 from src.trainer import Trainer
 from src.options import ModelOptions, DataOptions, TrainOptions
 
-from src.sampling.data import load_dataset
+from src.sampling.data import DatasetIndependentCropping
 from src.sampling.collators import Collator
-from src.sampling.index_utils import NegativeSpanMiner
-from src.sampling.encoders import BERTEncoder
-
-os.environ['WANDB_PROJECT'] = 'SSLDR-span-learn'
+from src.sampling.miner import NegativeSpanMiner
 
 def main():
 
@@ -31,45 +28,19 @@ def main():
     tokenizer.eos_token = '[SEP]'
 
     # [Data] train/eval datasets, collator, preprocessor
-    train_dataset = load_dataset(data_opt, tokenizer)
+    train_dataset = DatasetIndependentCropping(data_opt, tokenizer)
     eval_dataset = None
-    ## if using `precomputed`. The select span mode is `no`
-    train_dataset.select_span_mode = data_opt.select_span_mode
     collator = Collator(opt=data_opt)
 
-    ## [Data-2] Before training, init encoder for precomputing if needed
-    if train_opt.resume_from_checkpoint is not None:
-        if 'true' in train_opt.resume_from_checkpoint.lower():
-            last_checkpoint = get_last_checkpoint(train_opt.output_dir)
-        else:
-            last_checkpoint = train_opt.resume_from_checkpoint
-        encoder = BERTEncoder(last_checkpoint, device='cuda')
-
-        ## precompute spans
-        train_dataset.init_spans(
-                encoder=encoder,
-                batch_size=128,
-                max_doc_length=384,
-                ngram_range=(2,3),
-                top_k_spans=10,
-                return_doc_embeddings=False,
-                doc_embeddings_by_spans=False
-        )
-        del encoder
+    ## [Model] negative miner
+    if train_opt.do_negative_sampling:
+        negative_miner = NegativeSpanMiner(data_opt, train_dataset, tokenizer)
+    else:
+        negative_miner = None
 
     # [Model] model architecture (encoders and bi-encoder framework)
     from src.modeling import Contriever
     from src.modeling import InBatchInteraction
-
-    ## [Model] negative miner
-    if train_opt.do_negative_sampling:
-        negative_miner = NegativeSpanMiner(
-                dataset=train_dataset,
-                tokenizer=tokenizer,
-                index_dir=data_opt.prebuilt_index_dir,
-        )
-    else:
-        negative_miner = None
 
     encoder = Contriever.from_pretrained(
             model_opt.model_name, 
@@ -116,7 +87,7 @@ def main():
     # trainer.train(resume_from_checkpoint=train_opt.resume_from_checkpoint)
 
     ## Setup t0.5 for span indexing and encoding
-    trainer.save_model(os.path.join(train_opt.output_dir))
+    # trainer.save_model(os.path.join(train_opt.output_dir))
 
     final_path = train_opt.output_dir
     if  trainer.is_world_process_zero():

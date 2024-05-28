@@ -9,45 +9,45 @@ class ModelOptions:
     model_name: Optional[str] = field(default=None)
     model_path: Optional[str] = field(default=None)
     tokenizer_name: Optional[str] = field(default=None)
-    # SSL DR
     add_pooling_layer: Optional[bool] = field(default=False)
+    # SSL DR
     pooling: Optional[str] = field(default="mean")
-    span_pooling: Optional[str] = field(default=None)
+    span_pooling: Optional[str] = field(default="mean")
     norm_doc: Optional[bool] = field(default=False)
     norm_query: Optional[bool] = field(default=False)
     norm_spans: Optional[bool] = field(default=False)
-    # output_span: Optional[bool] = field(default=False)
-    # Lexical-enhanced: span
+    # span
+    # objective, mining source
     temperature: Optional[float] = field(default=1.0)
     temperature_span: Optional[float] = field(default=1.0)
-    # span_span_interaction: Optional[bool] = field(default=False)
-    # Lexical-enhanced: multivec
-    # late_interaction: Optional[bool] = field(default=False)
-    # Objective weights
     alpha: float = field(default=1.0)
-    beta: float = field(default=0.5) # since it's bidirectional
+    beta: float = field(default=1.0) 
     gamma: float = field(default=1.0)
-    # delta: float = field(default=0.0)
     mine_neg_using: Optional[str] = field(default=None)
-    # 
-    my_debug: Optional[bool] = field(default=False)
+    # Multivec (previous)
+    # late_interaction: Optional[bool] = field(default=False)
 
 @dataclass
 class DataOptions:
-    positive_sampling: Optional[str] = field(default='ind_cropping')
-    train_data_dir: Optional[str] = field(default=None)
-    eval_data_dir: Optional[str] = field(default=None)
-    loading_mode: Optional[str] = field(default="from_scratch")
+    # positive_sampling: Optional[str] = field(default='ind_cropping')
+    corpus_jsonl: Optional[str] = field(default=None)
+    corpus_spans_jsonl: Optional[str] = field(default=None)
+    # negative sampling
+    prebuilt_faiss_dir: Optional[str] = field(default=None)
+    prebuilt_negative_jsonl: Optional[str] = field(default=None)
+    # independent cropping
     chunk_length: Optional[int] = field(default=256)
     ratio_min: Optional[float] = field(default=0.1)
     ratio_max: Optional[float] = field(default=0.5)
     augmentation: Optional[str] = field(default=None)
     prob_augmentation: Optional[float] = field(default=0.0)
-    select_span_mode: Optional[str] = field(default=None)
-    # Negative miner
-    prebuilt_index_dir: Optional[str] = field(default='no')
-    # precompute_with_spans: bool = field(default=False)
+    # preprocessing
     preprocessing: Optional[str] = field(default='replicate')
+    min_chunk_length: Optional[int] = field(default=32)
+    # span contrastive
+    select_span_mode: Optional[str] = field(default=None)
+    span_mask: Optional[bool] = field(default=None)
+    span_online_update: bool = field(default=False)
 
 @dataclass
 class TrainOptions(TrainingArguments):
@@ -67,7 +67,7 @@ class TrainOptions(TrainingArguments):
     per_device_eval_batch_size: int = field(default=2)
     logging_dir: Optional[str] = field(default='./logs')
     resume_from_checkpoint: Optional[str] = field(default=None)
-    save_total_limit: Optional[int] = field(default=2)
+    save_total_limit: Optional[int] = field(default=4)
     learning_rate: Union[float] = field(default=5e-5)
     remove_unused_columns: bool = field(default=False)
     dataloader_num_workers: int = field(default=1)
@@ -77,6 +77,5 @@ class TrainOptions(TrainingArguments):
     do_tas_doc: Optional[bool] = field(default=False)
     # negative sampling
     do_negative_sampling: Optional[bool] = field(default=False)
-    negative_samples_position: Optional[str] = field(default='before')
     lr_scheduler_type: Optional[str] = field(default='constant') 
     # original is linear

@@ -21,15 +21,18 @@ class Collator(object):
         batch["c_tokens"] = c_tokens
         batch["c_mask"] = c_mask
         batch['data_index'] = torch.Tensor(batch['data_index']) 
-        # for re-searching the negatives
-        # [todo] look for a better to include data_index, 
-        # since it's unnecessary to make it a tensor (wasting gpu)
 
         # derived from document
         if "span_tokens" in batch:
             span_tokens, span_mask = build_mask(batch["span_tokens"])
             batch["span_tokens"] = span_tokens
             batch["span_mask"] = span_mask
+
+        # the original document
+        if "d_tokens" in batch:
+            d_tokens, d_mask = build_mask(batch["d_tokens"])
+            batch["d_tokens"] = d_tokens
+            batch["d_mask"] = d_mask
 
         return batch
 

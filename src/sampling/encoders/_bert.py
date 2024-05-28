@@ -51,10 +51,8 @@ class BertEmbeddings(BertModel):
             emb = self._mean_pooling(last_hidden, attention_mask)
 
         if return_token_embeddings:
-            last_hidden[:, 0] = 0
-            last_hidden[:, -1] = 0
-            return emb, last_hidden # remove the CLS tokens
+            return emb, last_hidden 
         else:
-            return emb
+            return emb, None
 
 

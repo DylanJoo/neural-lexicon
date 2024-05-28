@@ -4,6 +4,86 @@ import torch
 import random
 import numpy as np
 from collections import defaultdict
+from nltk import ngrams
+from .utils import get_candidate_spans, batch_iterator
+
+def compute_span_embeds(
+    inputs,
+    mask,
+    ngram_range,
+    stride=1,
+    token_embeds=None,
+    span_pooling='max',
+):
+    """ compute similarity of contextualized n-gram
+    Params
+    ------
+    token_input
+    ngram_range 
+    token_embeds
+    doc_pooling
+    span_pooling
+
+    Returns
+    -------
+
+    """
+    candidate_inputs = []
+    candidate_embeds = []
+
+    unigram = list(range(sum(mask) - 1))
+    # add stride # skip the first one include cls token
+    for n in range(ngram_range[0], ngram_range[1]+1):
+        ngrams_set = [ngram for i, ngram in enumerate(ngrams(unigram, n)) if i % stride == 0][1:]
+        for indices in ngrams_set:
+            candidate_inputs.append( inputs[list(indices)].tolist() )
+            candidate_embeds.append( token_embeds[list(indices), :].mean(axis=0).reshape(1, -1) )
+
+    candidate_embeds = np.concatenate(candidate_embeds)
+    return candidate_inputs, candidate_embeds
+
+def batch_compute_span_embeds(
+    encoder, 
+    documents,
+    bos, eos,
+    batch_size,
+    ngram_range,
+    stride
+):
+    """ compute similarity of de-contextualized n-gram
+
+    Params
+    ------
+    encoder
+    documents 
+    batch_size 
+    ngram_range
+
+    Returns
+    -------
+    span_embes (torch.tensor)
+    doc_span_mapping (scipy.sparse_matrix)
+    ngram_mapping (np.numpy)
+
+    """
+    # prepare big matrix to collect all span candidates
+    X, mapping = get_candidate_spans(documents, ngram_range, stride)
+
+    ## compute span embedding BxN H
+    span_tokens = list(mapping.values())
+    # tokens = [add_bos_eos(s, bos, eos) for s in span_tokens]
+    tokens = [torch.Tensor([bos] + s + [eos]) for s in span_tokens]
+    tokens, mask = build_mask(tokens)
+
+    list_span_embed = []
+    for start, end in batch_iterator(tokens, batch_size, True):
+        tokens, mask = tokens.to(encoder.device), mask.to(encoder.device)
+        outputs = encoder.encode(tokens[start:end], mask[start:end])
+        span_embeds = outputs[0].detach().cpu()
+        list_span_embed.append(span_embeds)
+
+    span_embeds = torch.cat(list_span_embed).numpy()
+    return span_embeds, X, mapping
 
 def randomcrop(x, ratio_min, ratio_max):
 
@@ -72,8 +152,10 @@ def maskword(x, mask_id, p=0.1):
     x = [e if m > p else mask_id for e, m in zip(x, mask)]
     return x
 
-def maskword_from_span(x, mask_id, span):
-    x = [e if e not in span else mask_id for e in x]
+def maskword_from_span(x, mask_id, span, p=0.5):
+    applied = (np.random.uniform(0, 1, 1)[0] < p)
+    if applied:
+        x = [e if e not in span else mask_id for e in x]
     return x
 
 def shuffleword(x, p=0.1):
@@ -87,12 +169,11 @@ def shuffleword(x, p=0.1):
         x[old_index] = value
     return x
 
-
 def apply_augmentation(x, opt, span=None):
     if opt.augmentation == "mask":
-        return torch.tensor(maskword(x, mask_id=opt.mask_id, p=opt.prob_augmentation))
+        return torch.tensor(maskword(x, mask_id=opt.mask_token_id, p=opt.prob_augmentation))
     elif opt.augmentation == "mask_from_span":
-        return torch.tensor(maskword_from_span(x, mask_id=opt.mask_id, span=span))
+        return torch.tensor(maskword_from_span(x, mask_id=opt.mask_token_id, span=span, p=opt.prob_augmentation))
     elif opt.augmentation == "replace":
         return torch.tensor(
             replaceword(x, min_random=opt.start_id, max_random=opt.vocab_size - 1, p=opt.prob_augmentation)
@@ -105,7 +186,6 @@ def apply_augmentation(x, opt, span=None):
         if not isinstance(x, torch.Tensor):
             x = torch.Tensor(x)
         return x
-
 
 def add_bos_eos(x, bos_token_id, eos_token_id):
     if not isinstance(x, torch.Tensor):

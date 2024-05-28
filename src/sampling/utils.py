@@ -1,7 +1,10 @@
+import collections
 import numpy as np
 from operator import itemgetter
 from typing import List, Tuple
+from scipy.sparse import csr_matrix
 from sklearn.metrics.pairwise import cosine_similarity
+from nltk.util import ngrams
 
 def batch_iterator(iterable, size=1, return_index=False):
     l = len(iterable)
@@ -23,26 +26,25 @@ def argdiff(iterable):
 
 
 def cosine_top_k(
-    doc_embedding: np.ndarray,
-    candidate_embeddings: np.ndarray,
-    top_k: int = 10,
-) -> List[Tuple[str, float]]:
+        doc_embedding,
+        candidates,
+        candidate_embeddings,
+        top_k: int = 10
+    ) -> List[Tuple[str, float]]:
 
-    scores = cosine_similarity(
-            doc_embedding.reshape(1, -1), candidate_embeddings
-    )
+    scores = cosine_similarity(doc_embedding.reshape(1, -1), candidate_embeddings)
     key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) \
-            for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
+            for i_ngram in scores.argsort()[0][-top_k:]][::-1]     
     return key_spans
 
 # this is from keybert
 def mmr_top_k(
-    doc_embedding: np.ndarray,
-    word_embeddings: np.ndarray,
-    words: List[str],
-    top_k: int = 5,
-    diversity: float = 0.8,
-) -> List[Tuple[str, float]]:
+        doc_embedding,
+        candidates,
+        candidate_embeddings,
+        top_k: int = 5,
+        diversity: float = 0.8,
+    ) -> List[Tuple[str, float]]:
 
     '''Calculate Maximal Marginal Relevance (MMR)
     between candidate keywords and the document.
@@ -55,7 +57,7 @@ def mmr_top_k(
 
     Arguments:
         doc_embedding: The document embeddings
-        word_embeddings: The embeddings of the selected candidate keywords/phrases
+        candidate_embeddings: The embeddings of the selected candidate keywords/phrases
         words: The selected candidate keywords/keyphrases
         top_k: The number of keywords/keyhprases to return
         diversity: How diverse the select keywords/keyphrases are.
@@ -66,37 +68,69 @@ def mmr_top_k(
          List[Tuple[str, float]]: The selected keywords/keyphrases with their distances
 
     '''
+    doc_embedding = doc_embedding.reshape(1, -1)
 
     # Extract similarity within words, and between words and the document
-    word_doc_similarity = cosine_similarity(word_embeddings, doc_embedding)
-    word_similarity = cosine_similarity(word_embeddings)
+    scores = cosine_similarity(candidate_embeddings, doc_embedding)
+    cand_scores = cosine_similarity(candidate_embeddings)
 
     # Initialize candidates and already choose best keyword/keyphras
-    keywords_idx = [np.argmax(word_doc_similarity)]
-    candidates_idx = [i for i in range(len(words)) if i != keywords_idx[0]]
+    selected = [np.argmax(scores)]
+    remained = [i for i in range(len(candidates)) if i != selected[0]]
 
-    for _ in range(min(top_k - 1, len(words) - 1)):
+    for _ in range(min(top_k - 1, len(candidates) - 1)):
         # Extract similarities within candidates and
         # between candidates and selected keywords/phrases
-        candidate_similarities = word_doc_similarity[candidates_idx, :]
+        candidate_similarities = scores[remained, :]
         target_similarities = np.max(
-            word_similarity[candidates_idx][:, keywords_idx], axis=1
+                cand_scores[remained][:, selected], axis=1
         )
 
         # Calculate MMR
-        mmr = (
-            1 - diversity
-        ) * candidate_similarities - diversity * target_similarities.reshape(-1, 1)
-        mmr_idx = candidates_idx[np.argmax(mmr)]
+        mmr = (1 - diversity) * candidate_similarities - diversity * target_similarities.reshape(-1, 1)
+        mmr_idx = remained[np.argmax(mmr)]
 
         # Update keywords & candidates
-        keywords_idx.append(mmr_idx)
-        candidates_idx.remove(mmr_idx)
+        selected.append(mmr_idx)
+        remained.remove(mmr_idx)
 
     # Extract and sort keywords in descending similarity
-    keywords = [
-        (words[idx], round(float(word_doc_similarity.reshape(1, -1)[0][idx]), 4))
-        for idx in keywords_idx
-    ]
-    keywords = sorted(keywords, key=itemgetter(1), reverse=True)
-    return keywords
+    key_spans = [(candidates[i_ngram], round(float(scores[i_ngram, 0]), 4)) for i_ngram in selected]
+    return key_spans
+
+def get_candidate_spans(docs, ngram_range, stride):
+    bag_of_features = collections.defaultdict()
+    bag_of_features.default_factory = bag_of_features.__len__
+    j_indices, indptr = [], [0]
+
+    # unigram = list(range(sum(mask)))
+    # # add stride # skip the first one include cls token
+    # for n in range(ngram_range[0], ngram_range[1]+1):
+    #     ngrams_set = [ngram for i, ngram in enumerate(ngrams(unigram, n)) if i % stride == 0][1:]
+
+    for doc in docs:
+        # remove the redundant ngrams
+        ngram_set = []
+        for n in range(ngram_range[0], ngram_range[1]+1):
+            ngram_set += [ngram for i, ngram in enumerate(ngrams(doc, n)) if i % stride == 0]
+
+        ngram_set = set(ngram_set)
+        # create a map to collect feature (ngram token indices)
+        feature_indices = []
+        for feature in ngram_set:
+            idx = bag_of_features[feature]
+            feature_indices += [idx]
+
+        j_indices.extend(feature_indices)
+        indptr.append(len(j_indices))
+
+    # map to sparse array
+    j_indices = np.asarray(j_indices, dtype=np.int64)
+    indptr = np.asarray(indptr, dtype=np.int64)
+    values = [1] * len(j_indices)
+    X = csr_matrix((values, j_indices, indptr), shape=(len(indptr) - 1, len(bag_of_features)))
+
+    # reverse the key value of bof
+    feature_mapping = {v: list(k) for k, v in bag_of_features.items()}
+    return X, feature_mapping
+

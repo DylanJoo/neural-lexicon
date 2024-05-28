@@ -2,6 +2,7 @@
 *.out
 *.debug
 *.swp
+*.output
 
 **/__pycache__/
 
