@@ -21,31 +21,31 @@ data_dir=${HOME}/datasets/beir
 
 # decontextualized
 # for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
-for dataset in scidocs scifact;do
-    python precompute.py \
-    --encoder_name_or_path facebook/contriever \
-    --tokenizer_name_or_path facebook/contriever \
-    --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
-    --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/spans_tokenized.jsonl \
-    --min_ngrams 2 --max_ngrams 3 --stride 1 \
-    --decontextualized \
-    --num_spans 10 \
-    --batch_size 128 \
-    --device cuda
-done
-
-# contextualized
-# for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
 #     python precompute.py \
 #     --encoder_name_or_path facebook/contriever \
 #     --tokenizer_name_or_path facebook/contriever \
 #     --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
-#     --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/ctx_spans_tokenized.jsonl \
-#     --min_ngrams 10 --max_ngrams 10 --stride 5 \
+#     --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/spans_tokenized.jsonl \
+#     --min_ngrams 2 --max_ngrams 3 --stride 1 \
+#     --decontextualized \
 #     --num_spans 10 \
 #     --batch_size 128 \
 #     --device cuda
 # done
+
+# contextualized
+for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
+    python precompute.py \
+    --encoder_name_or_path facebook/contriever \
+    --tokenizer_name_or_path facebook/contriever \
+    --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
+    --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/ctx_spans_tokenized.jsonl \
+    --faiss_index_dir ${index_dir}/beir-neg/${dataset} \
+    --min_ngrams 10 --max_ngrams 10 --stride 5 \
+    --num_spans 10 \
+    --batch_size 128 \
+    --device cuda
+done
 
 # index_dir=${HOME}/indexes/lotte
 # data_dir=${HOME}/datasets/lotte

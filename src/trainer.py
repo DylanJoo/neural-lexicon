@@ -203,7 +203,8 @@ class Trainer(hf_trainer):
 
         if self.state.global_step % 50 == 0:
             logger.info('\n===== Examples starts =====\n')
-            for i in range(3):
+            for i in range(1):
+                print('index', inputs['data_index'][i].item())
                 for key in inputs.keys():
                     if '_tokens' in key:
                         print(f"{key:<12}: ", self.tokenizer.decode(inputs[key][i][:30], skip_special_tokens=False), '...')

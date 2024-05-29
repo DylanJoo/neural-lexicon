@@ -19,8 +19,7 @@ backbone=contriever
 ckpt=facebook/contriever
 exp=baseline
 
-# for dataset in trec-covid nfcorpus fiqa arguana webis-touche2020 quora scidocs scifact;do
-for dataset in scidocs;do
+for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
 
     # Go
     torchrun --nproc_per_node 2 \
@@ -38,7 +37,7 @@ for dataset in scidocs;do
         --ratio_min 0.1 --ratio_max 0.5 \
         --min_chunk_length 32 \
         --save_strategy steps \
-        --max_steps 1000 \
+        --max_steps 1500 \
         --save_steps 500 \
         --save_total_limit 4 \
         --fp16 --wandb_project exp1-single-dr  \

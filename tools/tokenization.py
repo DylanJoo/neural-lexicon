@@ -65,7 +65,7 @@ def tokenize_file(args):
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, local_files_only=False)
     print(f"Encoding {args.datapath}... and save tokenized ids in jsonl")
 
-    tokens = apply_tokenizer_then_save(
+    apply_tokenizer_then_save(
             args.datapath, 
             savepath,
             tokenizer, 

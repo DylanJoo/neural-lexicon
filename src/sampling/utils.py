@@ -1,8 +1,6 @@
 import collections
 import numpy as np
-from operator import itemgetter
 from typing import List, Tuple
-from scipy.sparse import csr_matrix
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.util import ngrams
 
@@ -97,40 +95,3 @@ def mmr_top_k(
     # Extract and sort keywords in descending similarity
     key_spans = [(candidates[i_ngram], round(float(scores[i_ngram, 0]), 4)) for i_ngram in selected]
     return key_spans
-
-def get_candidate_spans(docs, ngram_range, stride):
-    bag_of_features = collections.defaultdict()
-    bag_of_features.default_factory = bag_of_features.__len__
-    j_indices, indptr = [], [0]
-
-    # unigram = list(range(sum(mask)))
-    # # add stride # skip the first one include cls token
-    # for n in range(ngram_range[0], ngram_range[1]+1):
-    #     ngrams_set = [ngram for i, ngram in enumerate(ngrams(unigram, n)) if i % stride == 0][1:]
-
-    for doc in docs:
-        # remove the redundant ngrams
-        ngram_set = []
-        for n in range(ngram_range[0], ngram_range[1]+1):
-            ngram_set += [ngram for i, ngram in enumerate(ngrams(doc, n)) if i % stride == 0]
-
-        ngram_set = set(ngram_set)
-        # create a map to collect feature (ngram token indices)
-        feature_indices = []
-        for feature in ngram_set:
-            idx = bag_of_features[feature]
-            feature_indices += [idx]
-
-        j_indices.extend(feature_indices)
-        indptr.append(len(j_indices))
-
-    # map to sparse array
-    j_indices = np.asarray(j_indices, dtype=np.int64)
-    indptr = np.asarray(indptr, dtype=np.int64)
-    values = [1] * len(j_indices)
-    X = csr_matrix((values, j_indices, indptr), shape=(len(indptr) - 1, len(bag_of_features)))
-
-    # reverse the key value of bof
-    feature_mapping = {v: list(k) for k, v in bag_of_features.items()}
-    return X, feature_mapping
-

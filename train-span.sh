@@ -1,7 +1,7 @@
 #!/bin/sh
 #SBATCH --job-name=train.exp1
 #SBATCH --partition gpu
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:nvidia_titan_v:2
 #SBATCH --mem=24G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -18,16 +18,17 @@ data_dir=${HOME}/datasets/beir
 backbone=contriever
 ckpt=facebook/contriever
 exp=span
+span=ctx_spans
 
 # for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
-for dataset in scidocs;do
+for dataset in scidocs scifact;do
 
     # Go
     torchrun --nproc_per_node 2 \
         train.py \
         --model_name ${ckpt} \
         --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
-        --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/spans_tokenized.jsonl \
+        --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/${span}_tokenized.jsonl \
         --select_span_mode weighted \
         --output_dir models/ckpt/${backbone}-${exp}/${dataset} \
         --per_device_train_batch_size 32 \
@@ -40,6 +41,7 @@ for dataset in scidocs;do
         --save_strategy steps \
         --max_steps 1500 \
         --save_steps 500 \
+        --save_total_limit 4 \
         --fp16 --wandb_project exp1-single-dr  \
         --report_to wandb --run_name ${dataset}-${exp}
 done

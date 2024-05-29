@@ -17,10 +17,10 @@ index_dir=${HOME}/indexes/beir
 data_dir=${HOME}/datasets/beir
 # Setting of encoders
 backbone=contriever
-exp=baseline
+exp=span
 
 # for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
-for dataset in scidocs;do
+for dataset in scidocs scifact;do
 
     # Go
     for ckpt in 500 1000 1500;do

@@ -10,8 +10,9 @@ import faiss
 from tqdm import tqdm
 from datasets import Dataset
 
-from .utils import batch_iterator, cosine_top_k, get_candidate_spans
 from .data_utils import *
+from .span_utils import *
+from .utils import batch_iterator, cosine_top_k
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,10 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
 
         ## attrs
         self.chunk_length = opt.chunk_length
+        self.min_chunk_length = opt.min_chunk_length
 
         ## preprocessing the raw corpus
-        self.corpus = self._load_corpus(do_replicate=(opt.preprocessing == 'replicate'))
+        self.corpus = self._load_corpus()
 
         ## span extraction
         self.select_span_mode = opt.select_span_mode
@@ -42,13 +44,7 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
         ## Independent croping
         self.span_online_update = opt.span_online_update
 
-    def _load_corpus(self, corpus_jsonl=None, do_replicate=False):
-
-        def replicate(x):
-            orig_len = len(x)
-            n_replicate = (self.chunk_length // orig_len)
-            x = x * max(n_replicate, 1)
-            return x
+    def _load_corpus(self, corpus_jsonl=None):
 
         file = (corpus_jsonl or self.opt.corpus_jsonl)
         self.corpus_jsonl = file
@@ -57,13 +53,14 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
         with open(file, 'r') as f:
             for line in f:
                 doc = json.loads(line.strip())['input_ids']
-                if do_replicate and len(doc) > 0:
-                    doc = replicate(doc)
-                    to_return.append( doc )
-                else: 
-                    if len(doc) > self.chunk_length:
-                        to_return.append( doc )
-        return to_return
+                to_return.append( doc )
+
+        # collect the normal length and duplicate the shorter (minimum)
+        to_return_1 = [d for d in to_return if len(d) > self.chunk_length]
+        to_return_0 = [d for d in to_return if len(d) <= self.chunk_length]
+        n_replicate = (self.chunk_length // self.min_chunk_length)
+        to_return_0 = [(d*n_replicate)[:self.chunk_length] for d in to_return_0 if len(d) > self.min_chunk_length]
+        return to_return_1 + to_return_0
 
     def _load_spans(self, spans_jsonl=None):
         file = (spans_jsonl or self.opt.corpus_spans_jsonl)
@@ -224,7 +221,7 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
         candidates, scores = list(zip(*self.spans[index]))
         if self.select_span_mode == 'weighted':
             span_tokens = random.choices(candidates, weights=scores, k=1)[0] # sample by the cosine
-        elif self.select_span_mode == 'max':
+        elif self.select_span_mode == 'top1':
             span_tokens = candidates[0]
         elif self.select_span_mode == 'random':
             span_tokens = random.choices(candidates, k=1)[0] 

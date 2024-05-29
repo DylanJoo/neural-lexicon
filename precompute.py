@@ -31,7 +31,8 @@ def main(args):
             corpus_spans_jsonl=args.corpus_spans_jsonl,
             chunk_length=256,
             min_chunk_length=32,
-            select_span_mode=None
+            select_span_mode=None,
+            preprocessing='replicate'
     )
     dataset = DatasetIndependentCropping(data_opt, tokenizer)
 
@@ -70,6 +71,7 @@ def main(args):
     ## [quick testing]
     data_opt.select_span_mode = 'weighted'
     dataset = DatasetIndependentCropping(data_opt, tokenizer)
+    print('total number\n', len(dataset))
     print('checking\n', dataset[0])
     print(tokenizer.decode(dataset[0]['q_tokens'].long()))
     print(tokenizer.decode(dataset[0]['span_tokens'].long()))
