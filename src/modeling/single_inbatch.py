@@ -2,12 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
+import copy
 
 import random
 from dataclasses import dataclass
 from typing import Optional, Tuple, Dict, List, Mapping
 from transformers.modeling_outputs import BaseModelOutput
-from src.modeling import dist_utils 
+from src.modeling import dist_utils
 
 @dataclass
 class InBatchOutput(BaseModelOutput):
@@ -26,11 +27,18 @@ class InBatchInteraction(nn.Module):
         retriever, 
         tokenizer, 
         miner=None, 
+        fixed_d_encoder=False
     ):
         super().__init__()
 
         self.opt = opt
         self.encoder = retriever
+        if fixed_d_encoder:
+            self.d_encoder = copy.deepcopy(retriever)
+            for p in self.d_encoder.parameters():
+                p.requires_grad = False
+        else:
+            self.d_encoder = self.encoder
         self.tokenizer = tokenizer
 
         # distributed 
@@ -57,7 +65,7 @@ class InBatchInteraction(nn.Module):
         loss = 0.0
         loss_sp = 0.0
         qemb = self.encoder(input_ids=q_tokens, attention_mask=q_mask)[0]
-        cemb = self.encoder(input_ids=c_tokens, attention_mask=c_mask)[0]
+        cemb = self.d_encoder(input_ids=c_tokens, attention_mask=c_mask)[0]
         spemb = None
 
         if self.is_ddp:
