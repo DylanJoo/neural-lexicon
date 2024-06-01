@@ -22,6 +22,9 @@ backbone=contriever
 exp=ft-on-ms
 encoder=facebook/contriever-msmarco
 
+exp=unsupervised
+encoder=facebook/contriever
+
 # Go
 ## smaller corpus
 for dataset in trec-covid nfcorpus fiqa arguana webis-touche2020 quora scidocs scifact;do
