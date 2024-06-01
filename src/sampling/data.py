@@ -78,11 +78,12 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
             token_embeds = batch_token_embeds[i]
             doc_embed = batch_doc_embeds[i]
 
+            # [NOTE] so far, online update is for 'contextalized' span
             candidates, candidate_embeds = compute_span_embeds(
                     inputs=batch_d_tokens[i],
                     mask=batch_d_masks[i],
                     ngram_range=(10, 10), 
-                    stride=10,
+                    stride=5,
                     token_embeds=token_embeds,
                     span_pooling='mean',
             )
@@ -204,7 +205,7 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
 
         # add entire doc
         if self.span_online_update:
-            d_tokens = add_bos_eos(document[:self.chunk_length], bos, eos)
+            d_tokens = add_bos_eos(document[:384], bos, eos)
             outputs.update({"d_tokens": d_tokens})
 
         return outputs

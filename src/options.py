@@ -26,6 +26,7 @@ class ModelOptions:
     mine_neg_using: Optional[str] = field(default=None)
     # Multivec (previous)
     # late_interaction: Optional[bool] = field(default=False)
+    fixed_d_encoder: Optional[bool] = field(default=False)
 
 @dataclass
 class DataOptions:
@@ -74,7 +75,7 @@ class TrainOptions(TrainingArguments):
     dataloader_prefetch_factor: int = field(default=2)
     fp16: bool = field(default=False)
     wandb_project: Optional[str] = field(default=None)
-    do_tas_doc: Optional[bool] = field(default=False)
+    # do_tas_doc: Optional[bool] = field(default=False)
     # negative sampling
     do_negative_sampling: Optional[bool] = field(default=False)
     lr_scheduler_type: Optional[str] = field(default='constant') 

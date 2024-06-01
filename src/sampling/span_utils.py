@@ -15,7 +15,7 @@ def compute_span_embeds(
     ngram_range,
     stride=1,
     token_embeds=None,
-    span_pooling='max',
+    span_pooling='mean',
 ):
     """ compute similarity of contextualized n-gram
     Params
