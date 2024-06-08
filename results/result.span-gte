@@ -1,0 +1,16 @@
+beir | span | trec-covid | 500 | 0.1159 | 0.5802
+beir | span | trec-covid | 1000 | 0.1113 | 0.5672
+beir | span | nfcorpus | 500 | 0.3257 | 0.3461
+beir | span | nfcorpus | 1000 | 0.3243 | 0.3325
+beir | span | fiqa | 500 | 0.5219 | 0.2034
+beir | span | fiqa | 1000 | 0.5048 | 0.1900
+beir | span | arguana | 500 | 0.9822 | 0.3773
+beir | span | arguana | 1000 | 0.9829 | 0.3811
+beir | span | webis-touche2020 | 500 | 0.2991 | 0.1172
+beir | span | webis-touche2020 | 1000 | 0.2718 | 0.0902
+beir | span | quora | 500 | 0.9905 | 0.8415
+beir | span | quora | 1000 | 0.9897 | 0.8321
+beir | span | scidocs | 500 | 0.4125 | 0.1689
+beir | span | scidocs | 1000 | 0.4212 | 0.1630
+beir | span | scifact | 500 | 0.9450 | 0.6450
+beir | span | scifact | 1000 | 0.9310 | 0.6556

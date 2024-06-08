@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=24:00:00
-#SBATCH --output=%x.%j.output
+#SBATCH --output=%x.%j.out
 
 # Set-up the environment.
 source ${HOME}/.bashrc

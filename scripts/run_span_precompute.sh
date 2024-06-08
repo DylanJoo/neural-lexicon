@@ -22,7 +22,7 @@ encoder=thenlper/gte-base
 
 # decontextualized
 for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
-    python precompute.py \
+    python precompute_span.py \
     --encoder_name_or_path ${encoder} \
     --tokenizer_name_or_path ${encoder} \
     --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
@@ -36,7 +36,7 @@ done
 
 # contextualized
 # for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
-#     python precompute.py \
+#     python precompute_span.py \
 #     --encoder_name_or_path ${encoder} \
 #     --tokenizer_name_or_path ${encoder} \
 #     --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
@@ -51,12 +51,12 @@ done
 # data_dir=${HOME}/datasets/lotte
 # # science 
 # for dataset in lifestyle recreation technology writing;do
-#     python precompute.py \
+#     python precompute_span.py \
 #         --encoder_name_or_path ${encoder} \
 #         --tokenizer_name_or_path ${encoder} \
 #         --corpus_jsonl ${data_dir}/${dataset}/test/collection_tokenized/docs00.json \
 #         --corpus_spans_jsonl ${data_dir}/${dataset}/test/collection_tokenized/spans_tokenized.jsonl \
-#         --faiss_index_dir ${index_dir}-neg/${dataset} \
+#         --faiss_dir ${index_dir}-neg/${dataset} \
 #         --min_ngrams 5 --max_ngrams 6 \
 #         --num_spans 10 \
 #         --batch_size 128 \
