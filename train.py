@@ -33,7 +33,7 @@ def main():
     collator = Collator(opt=data_opt)
 
     ## [Model] negative miner
-    if train_opt.do_negative_sampling:
+    if model_opt.n_negative_samples > 0:
         negative_miner = NegativeSpanMiner(data_opt, train_dataset, tokenizer)
     else:
         negative_miner = None
@@ -50,6 +50,7 @@ def main():
     model = InBatchInteraction(
             opt=model_opt, 
             retriever=encoder, 
+            fixed_d_encoder=model_opt.fixed_d_encoder,
             tokenizer=tokenizer,
             miner=negative_miner
     )
