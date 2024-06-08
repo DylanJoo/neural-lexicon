@@ -71,10 +71,14 @@ def maskword(x, mask_id, p=0.1):
     x = [e if m > p else mask_id for e, m in zip(x, mask)]
     return x
 
-def maskword_from_span(x, mask_id, span, p=0.5):
+def mask_from_span(x, mask_id, span, p=0.5):
     applied = (np.random.uniform(0, 1, 1)[0] < p)
     if applied:
         x = [e if e not in span else mask_id for e in x]
+    return x
+
+def remove_punc(x, skiplist):
+    x = [e for e in x if e not in skiplist]
     return x
 
 def shuffleword(x, p=0.1):
@@ -92,7 +96,7 @@ def apply_augmentation(x, opt, span=None):
     if opt.augmentation == "mask":
         return torch.tensor(maskword(x, mask_id=opt.mask_token_id, p=opt.prob_augmentation))
     elif opt.augmentation == "mask_from_span":
-        return torch.tensor(maskword_from_span(x, mask_id=opt.mask_token_id, span=span, p=opt.prob_augmentation))
+        return torch.tensor(mask_from_span(x, mask_id=opt.mask_token_id, span=span, p=opt.prob_augmentation))
     elif opt.augmentation == "replace":
         return torch.tensor(
             replaceword(x, min_random=opt.start_id, max_random=opt.vocab_size - 1, p=opt.prob_augmentation)

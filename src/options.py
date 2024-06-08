@@ -24,6 +24,7 @@ class ModelOptions:
     beta: float = field(default=1.0) 
     gamma: float = field(default=1.0)
     mine_neg_using: Optional[str] = field(default=None)
+    n_negative_samples: Optional[int] = field(default=0)
     # Multivec (previous)
     # late_interaction: Optional[bool] = field(default=False)
     fixed_d_encoder: Optional[bool] = field(default=False)
@@ -76,7 +77,5 @@ class TrainOptions(TrainingArguments):
     fp16: bool = field(default=False)
     wandb_project: Optional[str] = field(default=None)
     # do_tas_doc: Optional[bool] = field(default=False)
-    # negative sampling
-    do_negative_sampling: Optional[bool] = field(default=False)
     lr_scheduler_type: Optional[str] = field(default='constant') 
     # original is linear

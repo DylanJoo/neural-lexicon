@@ -34,7 +34,8 @@ class NegativeSpanMiner:
         self.negatives = []
 
         ## precomupted index. 
-        ## It can be used for (1) mining static negative or (2) mining dynamic negative
+        ## It can be used for 
+        ## (1) mining static negative, (2) mining dynamic negative
         self.index_dir = ""
         self.index, self.docids = None, None
 
@@ -63,7 +64,7 @@ class NegativeSpanMiner:
             for line in f:
                 item = json.loads(line.strip())
                 try:
-                    idx = item['docidx']
+                    idx = int(item['docidx'])
                 except:
                     idx = len(self.negatives)
 
@@ -83,10 +84,17 @@ class NegativeSpanMiner:
                 if negative_idx not in indices + indices_to_return:
                     indices_to_return.append(negative_idx[0])
 
-        return self.prepare_input(indices_to_return)
+        return self.prepare_input(indices_to_return, field)
 
     ## [static mining]
-    def precompute_prior_negatives(self, encoder, batch_size=64, n_samples=1, top_k=100):
+    def precompute_prior_negatives(
+        self, 
+        encoder, 
+        batch_size=64, 
+        n_samples=1, 
+        top_k=100,
+        negative_writer=None
+    ):
 
         with torch.no_grad():
             for s, e in tqdm(
@@ -107,19 +115,20 @@ class NegativeSpanMiner:
                 q_tokens, c_tokens = q_tokens.to(encoder.device), c_tokens.to(encoder.device)
                 q_mask, c_mask = q_mask.to(encoder.device), c_mask.to(encoder.device)
 
-                embeds_1 = encoder.encode(q_tokens, q_mask).detach().cpu()
-                embeds_2 = encoder.encode(c_tokens, c_mask).detach().cpu()
+                qemb = encoder.encode(q_tokens, q_mask)[0]
+                cemb = encoder.encode(c_tokens, c_mask)[0]
 
-                for i, (e1, e2) in enumerate(zip(embeds_1, embeds_2)):
-                    negative = self.crop_depedent_from_docs(
-                            e1, e2, batch['data_index'][i],
-                            n=n_samples, k0=0, k=top_k,
-                            exclude_overlap=False, 
-                            start_from_hit=False, 
-                            to_return='span', 
-                            return_index=True
-                    )
-                    self.negatives.append(negative)
+                negatives = self.crop_depedent_from_docs(
+                        embeds_1=qemb.clone().detach().cpu(), 
+                        embeds_2=cemb.clone().detach().cpu(),
+                        indices=[], # will do during the training batch
+                        n=n_samples, k0=0, k=top_k,
+                        exclude_overlap=False, 
+                        to_return='span', 
+                        return_indices=True
+                )
+                for negative in negatives:
+                    negative_writer.write(json.dumps({"negatives": negative})+'\n')
 
     def crop_depedent_from_docs(
         self, 
@@ -128,8 +137,8 @@ class NegativeSpanMiner:
         indices,
         n=1, k0=0, k=100, 
         exclude_overlap=True,
-        start_from_hit=False,
         to_return='span',
+        return_indices=False,
     ):
         """
         param
@@ -156,10 +165,11 @@ class NegativeSpanMiner:
 
         overlap_rate = []
         batch_docidx = []
+        excluded = []
 
         N = n * embeds_1.shape[0]
 
-        for i, idx in enumerate(indices):
+        for i in range(embeds_1.shape[0]):
 
             ## filtered the overlapped and combine (harder a bit)
             I1_i, I2_i = I1[i][k0:k], I2[i][k0:k]
@@ -182,18 +192,24 @@ class NegativeSpanMiner:
             overlap_rate.append( sum(overlap_1) / overall )
 
             ## exclude repetitive and exclude the document
-            I_i = [neg_idx for neg_idx in I_i if neg_idx not in indices + batch_docidx]
+            I_i = I_i.tolist()
+            I_i = [neg_idx for neg_idx in I_i if neg_idx not in indices + excluded]
 
-            batch_docidx += I_i[:n]
+            batch_docidx.append( I_i[:n] )
+
+            if return_indices is False:
+                excluded += I_i[:n]
 
         # reorganize
         self.additional_log.update({'overlap_rate': np.mean(overlap_rate)})
-        batch_docidx = batch_docidx[:N]
-        # return batch_docidx
 
-        return self.prepare_input(batch_docidx, 'span_tokens')
+        if return_indices:
+            return batch_docidx
+        else:
+            batch_docidx = [x for xs in batch_docidx for x in xs]
+            return self.prepare_input(batch_docidx, 'span_tokens')
 
-    def prepare_input(self, batch_docidx, field='span_tokens'):
+    def prepare_input(self, batch_docidx, field=None):
         batch_token_ids = []
         for docidx in batch_docidx:
             batch_token_ids.append(self.dataset[int(docidx)][field])

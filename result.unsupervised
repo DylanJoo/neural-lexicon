@@ -1,8 +1,0 @@
-beir | unsupervised | trec-covid | reproduced | 0.0608 | 0.4039
-beir | unsupervised | nfcorpus | reproduced | 0.2926 | 0.3244
-beir | unsupervised | fiqa | reproduced | 0.5803 | 0.2468
-beir | unsupervised | arguana | reproduced | 0.9687 | 0.3337
-beir | unsupervised | webis-touche2020 | reproduced | 0.4187 | 0.1857
-beir | unsupervised | quora | reproduced | 0.9871 | 0.8350
-beir | unsupervised | scidocs | reproduced | 0.3600 | 0.1509
-beir | unsupervised | scifact | reproduced | 0.9043 | 0.6394

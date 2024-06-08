@@ -7,6 +7,7 @@ import random
 import datetime
 import torch
 import faiss
+import string
 from tqdm import tqdm
 from datasets import Dataset
 
@@ -27,6 +28,7 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
         self.eos_token_id = tokenizer.eos_token_id
         self.mask_token_id = tokenizer.mask_token_id
         self.opt.mask_token_id = tokenizer.mask_token_id # this is made for augmentation
+        self.skiplist = [w for symbol in string.punctuation for w in tokenizer.encode(symbol, add_special_tokens=False)]
 
         ## attrs
         self.chunk_length = opt.chunk_length
@@ -193,6 +195,7 @@ class DatasetIndependentCropping(torch.utils.data.Dataset):
         c_tokens = add_bos_eos(c_tokens, bos, eos)
 
         if span_tokens is not None:
+            span_tokens = remove_punc(span_tokens, self.skiplist)
             span_tokens = add_bos_eos(span_tokens, bos, eos)
             return {"q_tokens": q_tokens, 
                     "c_tokens": c_tokens, 

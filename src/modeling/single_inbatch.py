@@ -50,6 +50,7 @@ class InBatchInteraction(nn.Module):
 
         ## negative miner
         self.miner = miner
+        self.n_negative_samples = opt.n_negative_samples
 
     def forward(
         self, 
@@ -84,7 +85,7 @@ class InBatchInteraction(nn.Module):
                     embeds_1=qemb.clone().detach().cpu(), 
                     embeds_2=cemb.clone().detach().cpu(),
                     indices=data_index,
-                    n=1, k0=0, k=100, 
+                    n=self.n_negative_samples, k0=0, k=100, 
                     exclude_overlap=False,
                     to_return='span',
             )

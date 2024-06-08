@@ -1,8 +1,0 @@
-beir | span-hn | scidocs | 1500 | 0.3823 | 0.1588
-beir | span-hn | scifact | 1500 | 0.9293 | 0.6412
-beir | span-hn | trec-covid | 1500 | 0.0770 | 0.4376
-beir | span-hn | nfcorpus | 1500 | 0.2943 | 0.3063
-beir | span-hn | fiqa | 1500 | 0.4417 | 0.1662
-beir | span-hn | arguana | 1500 | 0.9844 | 0.3823
-beir | span-hn | webis-touche2020 | 1500 | 0.3095 | 0.1571
-beir | span-hn | quora | 1500 | 0.9873 | 0.8213

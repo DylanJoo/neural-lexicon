@@ -1,7 +1,7 @@
 #!/bin/sh
-#SBATCH --job-name=train.exp1
+#SBATCH --job-name=train.exp2
 #SBATCH --partition gpu
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:nvidia_titan_v:2
 #SBATCH --mem=24G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -17,23 +17,18 @@ index_dir=${HOME}/indexes/beir
 data_dir=${HOME}/datasets/beir
 backbone=contriever
 ckpt=facebook/contriever
+exp=span-hn
+span=ctx_spans
 
-exp=span
-span_jsonl=spans_tokenized.jsonl
-augmentation=mask_from_span
-
-# exp=span-ctx
-# span_jsonl=ctx_spans_tokenized.jsonl
-# augmentation=mask_from_span
-
-for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
+# for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
+for dataset in scidocs scifact;do
 
     # Go
     torchrun --nproc_per_node 2 \
         train.py \
         --model_name ${ckpt} \
         --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
-        --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/${span_jsonl} \
+        --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/${span}_tokenized.jsonl \
         --select_span_mode weighted \
         --output_dir models/ckpt/${backbone}-${exp}/${dataset} \
         --per_device_train_batch_size 32 \
@@ -44,8 +39,10 @@ for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020
         --chunk_length 256 \
         --min_chunk_length 32 \
         --ratio_min 0.1 --ratio_max 0.5 \
-        --augmentation ${augmentation} \
-        --prob_augmentation 1.0 \
+        --span_online_update \
+        --do_negative_sampling \
+        --mine_neg_using crops \
+        --prebuilt_faiss_dir ${index_dir}-neg/${dataset} \
         --save_strategy steps \
         --max_steps 1500 \
         --save_steps 500 \
