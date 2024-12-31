@@ -31,7 +31,7 @@ def search(args):
     else:
         searcher = FaissSearcher(args.index, query_encoder)
 
-    topics = load_topic(args.topic)
+    topics = load_topic(args.topic, filter=args.qrels)
     qids = list(topics.keys())
     qtexts = list(topics.values())
     output = open(args.output, 'w')
@@ -64,6 +64,7 @@ if __name__ == '__main__':
     parser.add_argument("--encoder_path", default=None, type=str)
     parser.add_argument("--encoder_class", default='contriever', type=str)
     parser.add_argument("--topic", default=None, type=str)
+    parser.add_argument("--qrels", default=None, type=str)
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--output", default=None, type=str)
     parser.add_argument("--device", default='cpu', type=str)

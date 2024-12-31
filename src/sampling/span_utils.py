@@ -1,116 +1,113 @@
+import os
 import torch
-from tqdm import tqdm
-import collections
-from scipy.sparse import csr_matrix
+import random
 import numpy as np
-from nltk.util import ngrams
+import collections 
+from nltk import ngrams
+from scipy.sparse import csr_matrix
 
-from .data_utils import add_bos_eos, build_mask # integrate
-from .utils import cosine_top_k, mmr_top_k
+from .data_utils import build_mask
+from .utils import batch_iterator
 
-def add_extracted_spans(
+def compute_span_embeds(
+    inputs,
+    mask,
+    ngram_range,
+    stride=1,
+    token_embeds=None,
+    span_pooling='mean',
+):
+    """ compute similarity of contextualized n-gram
+    Params
+    ------
+    token_input
+    ngram_range 
+    token_embeds
+    doc_pooling
+    span_pooling
+
+    Returns
+    -------
+
+    """
+    candidate_inputs = []
+    candidate_embeds = []
+
+    unigram = list(range(sum(mask) - 1))
+    # add stride # skip the first one include cls token
+    for n in range(ngram_range[0], ngram_range[1]+1):
+        ngrams_set = [ngram for i, ngram in enumerate(ngrams(unigram, n)) if i % stride == 0][1:]
+        for indices in ngrams_set:
+            candidate_inputs.append( inputs[list(indices)].tolist() )
+            candidate_embeds.append( token_embeds[list(indices), :].mean(axis=0).reshape(1, -1) )
+
+    candidate_embeds = np.concatenate(candidate_embeds)
+    return candidate_inputs, candidate_embeds
+
+def batch_compute_span_embeds(
     encoder, 
-    documents, 
-    batch_size=64, 
-    max_doc_length=384,
-    ngram_range=(2,2),
-    top_k_spans=5,
-    bos_id=101,
-    eos_id=102,
-    return_doc_embeddings=False, 
-    span_selection='cosine',
-    by_spans=False
+    documents,
+    bos, eos,
+    batch_size,
+    ngram_range,
+    stride
 ):
-    with torch.no_grad():
-        all_doc_embeddings = []
-        extracted_spans = []
+    """ compute similarity of de-contextualized n-gram
 
-        for batch_docs in tqdm(batch_iterator(documents, batch_size), \
-		total=len(documents)//batch_size+1):
-            ## document encoding
-            tokens = [torch.Tensor([bos_id] + d[:(max_doc_length-2)] + [eos_id]) for d in batch_docs]
-            tokens, mask = build_mask(tokens)
-            tokens, mask = tokens.to(encoder.device), mask.to(encoder.device)
+    Params
+    ------
+    encoder
+    documents 
+    batch_size 
+    ngram_range
 
-            batch_doc_embeddings = encoder.encode(tokens, mask)
-            batch_doc_embeddings = batch_doc_embeddings.detach().cpu().numpy()
+    Returns
+    -------
+    span_embes (torch.tensor)
+    doc_span_mapping (scipy.sparse_matrix)
+    ngram_mapping (np.numpy)
 
-            ### additional record doc embeddings
-            if return_doc_embeddings and (by_spans is False):
-                all_doc_embeddings.append(batch_doc_embeddings)
+    """
+    # prepare big matrix to collect all span candidates
+    X, mapping = get_candidate_spans(documents, ngram_range, stride)
 
-            ## build the ngram candidate set
-            X, candidate_span_mapping = get_candidate_spans(batch_docs, ngram_range)
-            span_embeddings = calculate_span_embeddings(candidate_span_mapping, encoder, batch_size)
-
-            ## calculate the document-candidate similarity
-            for i, doc_embedding in enumerate(batch_doc_embeddings):
-                candidate_indices = X[i].nonzero()[1]
-                candidates = [candidate_span_mapping[j] for j in candidate_indices]
-                candidate_embeddings = span_embeddings[candidate_indices]
-
-                if 'cosine' in span_selection:
-                    scores = cosine_similarity(
-                            doc_embedding.reshape(1, -1), candidate_embeddings
-                    )
-                    key_spans = [(candidates[i_ngram], round(float(scores[0][i_ngram]), 4)) for i_ngram in scores.argsort()[0][-top_k_spans:]][::-1]     
-                elif 'mmr' in span_selection:
-                    mmr_top_k(
-                            doc_embedding
-                    )
-                    pass
-
-                extracted_spans.append(key_spans)
-
-                ### add average span embeddings
-                if return_doc_embeddings and (by_spans is True):
-                    avg_candidate_embeddings = candidate_embeddings[list(i for i in scores.argsort()[0][-top_k_spans:])]
-                    all_doc_embeddings.append(avg_candidate_embeddings.mean(0)[None, ...])
-
-    print('encoding fininshed. start stacking')
-    if return_doc_embeddings:
-        return extracted_spans, np.vstack(all_doc_embeddings)
-    else:
-        return (extracted_spans, )
-
-# orginal independent calculation
-def calculate_span_embeddings(
-    ngram_mapping, 
-    encoder=None,
-    batch_size=64,
-    bos_id=101,
-    eos_id=102,
-):
     ## compute span embedding BxN H
-    span_tokens = list(ngram_mapping.values())
-    tokens = [ torch.Tensor([bos_id] + s + [eos_id]) for s in span_tokens ]
+    span_tokens = list(mapping.values())
+    # tokens = [add_bos_eos(s, bos, eos) for s in span_tokens]
+    tokens = [torch.Tensor([bos] + s + [eos]) for s in span_tokens]
     tokens, mask = build_mask(tokens)
 
-    ret = []
+    list_span_embed = []
     for start, end in batch_iterator(tokens, batch_size, True):
         tokens, mask = tokens.to(encoder.device), mask.to(encoder.device)
-        span_embeddings = encoder.encode(tokens[start:end], mask[start:end])
-        span_embeddings = span_embeddings.detach().cpu()
-        ret.append(span_embeddings)
+        outputs = encoder.encode(tokens[start:end], mask[start:end])
+        span_embeds = outputs[0].detach().cpu()
+        list_span_embed.append(span_embeds)
 
-    span_embeddings = torch.cat(ret).numpy()
-    return span_embeddings
+    span_embeds = torch.cat(list_span_embed).numpy()
+    return span_embeds, X, mapping
 
 
-def get_candidate_spans(docs, ngram_range):
+def get_candidate_spans(docs, ngram_range, stride):
     bag_of_features = collections.defaultdict()
     bag_of_features.default_factory = bag_of_features.__len__
     j_indices, indptr = [], [0]
 
+    # unigram = list(range(sum(mask)))
+    # # add stride # skip the first one include cls token
+    # for n in range(ngram_range[0], ngram_range[1]+1):
+    #     ngrams_set = [ngram for i, ngram in enumerate(ngrams(unigram, n)) if i % stride == 0][1:]
+
     for doc in docs:
         # remove the redundant ngrams
-        feature_set = set([ngram_tuple for n in \
-                range(ngram_range[0], ngram_range[1]+1) for ngram_tuple in \
-                ngrams(doc, n)])
+        ngram_set = []
+        for n in range(ngram_range[0], ngram_range[1]+1):
+            ngram_set += [ngram for i, ngram in enumerate(ngrams(doc, n)) if i % stride == 0]
 
+        ngram_set = set(ngram_set)
         # create a map to collect feature (ngram token indices)
         feature_indices = []
-        for feature in feature_set:
+        for feature in ngram_set:
             idx = bag_of_features[feature]
             feature_indices += [idx]
 
@@ -126,12 +123,4 @@ def get_candidate_spans(docs, ngram_range):
     # reverse the key value of bof
     feature_mapping = {v: list(k) for k, v in bag_of_features.items()}
     return X, feature_mapping
-
-def batch_iterator(iterable, size=1, return_index=False):
-    l = len(iterable)
-    for ndx in range(0, l, size):
-        if return_index:
-            yield (ndx, min(ndx + size, l))
-        else:
-            yield iterable[ndx:min(ndx + size, l)]
 

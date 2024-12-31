@@ -2,6 +2,7 @@
 *.out
 *.debug
 *.swp
+*.output
 
 **/__pycache__/
 
@@ -11,3 +12,7 @@ archived/
 wandb/
 
 runs/
+
+span-testing.py
+unit_test.py
+

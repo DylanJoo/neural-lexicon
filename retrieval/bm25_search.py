@@ -9,7 +9,7 @@ def search(args):
 
     searcher = LuceneSearcher(args.index)
     searcher.set_bm25(k1=args.k1, b=args.b)
-    topics = load_topic(args.topic)
+    topics = load_topic(args.topic, filter=args.qrels)
     qids = list(topics.keys())
     qtexts = list(topics.values())
     output = open(args.output, 'w')
@@ -43,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument("--b", type=float, default=0.87) # 0.3 # 0.68
     parser.add_argument("--index", default=None, type=str)
     parser.add_argument("--topic", default=None, type=str)
+    parser.add_argument("--qrels", default=None, type=str)
     parser.add_argument("--batch_size", default=1, type=int)
     parser.add_argument("--output", default=None, type=str)
     parser.add_argument('--fields', metavar="key=value", nargs='+', default=None)

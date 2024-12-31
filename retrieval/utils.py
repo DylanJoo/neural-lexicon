@@ -2,7 +2,7 @@ from tqdm import tqdm
 import collections
 import json
 
-def load_topic(path):
+def load_topic(path, filter=None):
     topic = {}
 
     with open(path, 'r') as f:
@@ -16,7 +16,17 @@ def load_topic(path):
                 qid = data['_id'].strip()
                 qtext = data['text'].strip()
                 topic[str(qid)] = qtext
-    return topic
+
+    # filter the queries that have judgements (or sometimes it's too huge)
+    if filter is not None:
+        topic_filtered = {}
+        with open(filter, 'r') as f:
+            for line in f:
+                qid = line.strip().split()[0]
+                topic_filtered[str(qid)] = topic[str(qid)]
+        return topic_filtered
+    else:
+        return topic
 
 def batch_iterator(iterable, size=1, return_index=False):
     l = len(iterable)

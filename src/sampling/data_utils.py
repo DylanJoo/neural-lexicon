@@ -1,9 +1,8 @@
 import os
-import glob
 import torch
 import random
 import numpy as np
-from collections import defaultdict
+from nltk import ngrams
 
 def randomcrop(x, ratio_min, ratio_max):
 
@@ -72,8 +71,14 @@ def maskword(x, mask_id, p=0.1):
     x = [e if m > p else mask_id for e, m in zip(x, mask)]
     return x
 
-def maskword_from_span(x, mask_id, span):
-    x = [e if e not in span else mask_id for e in x]
+def mask_from_span(x, mask_id, span, p=0.5):
+    applied = (np.random.uniform(0, 1, 1)[0] < p)
+    if applied:
+        x = [e if e not in span else mask_id for e in x]
+    return x
+
+def remove_punc(x, skiplist):
+    x = [e for e in x if e not in skiplist]
     return x
 
 def shuffleword(x, p=0.1):
@@ -87,12 +92,11 @@ def shuffleword(x, p=0.1):
         x[old_index] = value
     return x
 
-
 def apply_augmentation(x, opt, span=None):
     if opt.augmentation == "mask":
-        return torch.tensor(maskword(x, mask_id=opt.mask_id, p=opt.prob_augmentation))
+        return torch.tensor(maskword(x, mask_id=opt.mask_token_id, p=opt.prob_augmentation))
     elif opt.augmentation == "mask_from_span":
-        return torch.tensor(maskword_from_span(x, mask_id=opt.mask_id, span=span))
+        return torch.tensor(mask_from_span(x, mask_id=opt.mask_token_id, span=span, p=opt.prob_augmentation))
     elif opt.augmentation == "replace":
         return torch.tensor(
             replaceword(x, min_random=opt.start_id, max_random=opt.vocab_size - 1, p=opt.prob_augmentation)
@@ -105,7 +109,6 @@ def apply_augmentation(x, opt, span=None):
         if not isinstance(x, torch.Tensor):
             x = torch.Tensor(x)
         return x
-
 
 def add_bos_eos(x, bos_token_id, eos_token_id):
     if not isinstance(x, torch.Tensor):

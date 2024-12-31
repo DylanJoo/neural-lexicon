@@ -2,26 +2,12 @@ import os
 import torch
 import torch.distributed as dist
 from transformers import Trainer as hf_trainer
-from transformers.utils import logging, is_datasets_available, SAFE_WEIGHTS_NAME
-from transformers.modeling_utils import unwrap_model
-from transformers.modeling_outputs import BaseModelOutput
-from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
-from transformers.trainer_utils import seed_worker, get_last_checkpoint
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
+from transformers.utils import logging 
+from transformers.trainer_utils import seed_worker 
 from torch.utils.data import DataLoader, RandomSampler
-
-from src.sampling.index_utils import NegativeSpanMiner
 
 logging.set_verbosity_info()
 logger = logging.get_logger("transformers")
-
-TRAINING_ARGS_NAME = "training_args.bin"
-TRAINER_STATE_NAME = "trainer_state.json"
-OPTIMIZER_NAME = "optimizer.pt"
-OPTIMIZER_NAME_BIN = "optimizer.bin"
-SCHEDULER_NAME = "scheduler.pt"
-SCALER_NAME = "scaler.pt"
-FSDP_MODEL_NAME = "pytorch_model_fsdp"
 
 class Trainer(hf_trainer):
 
@@ -34,46 +20,44 @@ class Trainer(hf_trainer):
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         self.model.encoder.from_pretrained(resume_from_checkpoint)
 
-    # [apply special sampler]
-    def _get_train_sampler(self):
-        if self.args.do_tas_doc: # as we dont have query actually.
-            ## [Data] combine into data loader, customized sampler 
-            from .sampling.samplers import BinSampler
-            return BinSampler(self.train_dataset, self.args.train_batch_size)
-        else:
-            return RandomSampler(self.train_dataset)
-
-    def get_train_dataloader(self) -> DataLoader:
-        """
-        Returns the training [`~torch.utils.data.DataLoader`].
-        Will use no sampler if `train_dataset` does not implement `__len__`, a random sampler 
-        (adapted to distributed training if necessary) otherwise.
-        Subclass and override this method if you want to inject some custom behavior.
-        """
-        if self.train_dataset is None:
-            raise ValueError("Trainer: training requires a train_dataset.")
-
-        train_dataset = self.train_dataset
-        data_collator = self.data_collator
-        data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
-
-        dataloader_params = {
-            "batch_size": self._train_batch_size,
-            "collate_fn": data_collator,
-            "num_workers": self.args.dataloader_num_workers,
-            "pin_memory": self.args.dataloader_pin_memory,
-            "persistent_workers": self.args.dataloader_persistent_workers,
-            "sampler": self._get_train_sampler()
-        }
-
-        # add sampler here
-        if not isinstance(train_dataset, torch.utils.data.IterableDataset):
-            # dataloader_params["sampler"] = self._get_train_sampler()
-            dataloader_params["drop_last"] = self.args.dataloader_drop_last
-            dataloader_params["worker_init_fn"] = seed_worker
-            dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
-
-        return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
+    # def _get_train_sampler(self):
+    #     if self.args.do_tas_doc: # as we dont have query actually.
+    #         from .sampling.samplers import BinSampler
+    #         return BinSampler(self.train_dataset, self.args.train_batch_size)
+    #     else:
+    #         return RandomSampler(self.train_dataset)
+    #
+    # def get_train_dataloader(self) -> DataLoader:
+    #     """
+    #     Returns the training [`~torch.utils.data.DataLoader`].
+    #     Will use no sampler if `train_dataset` does not implement `__len__`, a random sampler 
+    #     (adapted to distributed training if necessary) otherwise.
+    #     Subclass and override this method if you want to inject some custom behavior.
+    #     """
+    #     if self.train_dataset is None:
+    #         raise ValueError("Trainer: training requires a train_dataset.")
+    #
+    #     train_dataset = self.train_dataset
+    #     data_collator = self.data_collator
+    #     data_collator = self._get_collator_with_removed_columns(data_collator, description="training")
+    #
+    #     dataloader_params = {
+    #         "batch_size": self._train_batch_size,
+    #         "collate_fn": data_collator,
+    #         "num_workers": self.args.dataloader_num_workers,
+    #         "pin_memory": self.args.dataloader_pin_memory,
+    #         "persistent_workers": self.args.dataloader_persistent_workers,
+    #         "sampler": self._get_train_sampler()
+    #     }
+    #
+    #     # add sampler here
+    #     if not isinstance(train_dataset, torch.utils.data.IterableDataset):
+    #         # dataloader_params["sampler"] = self._get_train_sampler()
+    #         dataloader_params["drop_last"] = self.args.dataloader_drop_last
+    #         dataloader_params["worker_init_fn"] = seed_worker
+    #         dataloader_params["prefetch_factor"] = self.args.dataloader_prefetch_factor
+    #
+    #     return self.accelerator.prepare(DataLoader(train_dataset, **dataloader_params))
 
     # def train(
     #     self,
@@ -189,89 +173,62 @@ class Trainer(hf_trainer):
 	#     trial=trial,
 	#     ignore_keys_for_eval=ignore_keys_for_eval,
 	# )
-    #
-
-    # def _prepare_input(self, data: Union[torch.Tensor, Any]) -> Union[torch.Tensor, Any]:
-    #     """
-    #     Prepares one `data` before feeding it to the model, be it a tensor or a nested list/dictionary of tensors.
-    #     """
-    #     if isinstance(data, Mapping):
-    #         return type(data)({k: self._prepare_input(v) for k, v in data.items()})
-    #     elif isinstance(data, (tuple, list)):
-    #         return type(data)(self._prepare_input(v) for v in data)
-    #     elif isinstance(data, torch.Tensor):
-    #         kwargs = {"device": self.args.device}
-    #         if self.is_deepspeed_enabled and (torch.is_floating_point(data) or torch.is_complex(data)):
-    #             # NLP models inputs are int/uint and those get adjusted to the right dtype of the
-    #             # embedding. Other models such as wav2vec2's inputs are already float and thus
-    #             # may need special handling to match the dtypes of the model
-    #             kwargs.update({"dtype": self.accelerator.state.deepspeed_plugin.hf_ds_config.dtype()})
-    #         return data.to(**kwargs)
-    #     return data
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
         How the loss is computed by Trainer. By default, all models return the loss in the first element.
-
         Subclass and override for custom behavior.
         """
-        if "data_index" in inputs:
-            if self.is_ddp:
-                inputs['data_index'] = inputs['data_index'].long()
-            else:
-                inputs['data_index'] = inputs['data_index'].long().detach().cpu().numpy() 
-
-        if self.label_smoother is not None and "labels" in inputs:
-            labels = inputs.pop("labels")
+        ## recast the data index type since dist can only share tensor
+        if self.is_ddp:
+            inputs['data_index'] = inputs['data_index'].long()
         else:
-            labels = None
+            inputs['data_index'] = inputs['data_index'].long().detach().cpu().numpy()
+
+        # calculate d_tokens first
+        if 'd_tokens' in inputs:
+            model.eval()
+            demb, dtokemb = self.model.encoder(inputs['d_tokens'], inputs['d_mask'], return_multi_vectors=True)
+            demb, dtokemb = demb.detach().cpu().numpy(), dtokemb.detach().cpu().numpy()
+            self.train_dataset.update_spans(
+                    data_indices=inputs['data_index'].detach().cpu().numpy().tolist(),
+                    batch_d_tokens=inputs['d_tokens'].detach().cpu().numpy(),
+                    batch_d_masks=inputs['d_mask'].long().detach().cpu().numpy(),
+                    batch_token_embeds=dtokemb,
+                    batch_doc_embeds=demb
+            )
+            model.train()
 
         outputs = model(**inputs)
 
         if self.state.global_step % 50 == 0:
-            print('===== Examples starts =====')
-            for i in range(3):
-                print(self.tokenizer.decode(inputs['span_tokens'][i], add_speicial_tokens=False))
-                print(self.tokenizer.decode(inputs['q_tokens'][i], add_speicial_tokens=False))
-            print('===== Example ends =====')
+            logger.info('\n===== Examples starts =====\n')
+            for i in range(1):
+                print('index', inputs['data_index'][i].item())
+                for key in inputs.keys():
+                    if '_tokens' in key:
+                        print(f"{key:<12}: ", self.tokenizer.decode(inputs[key][i][:30], skip_special_tokens=False), '...')
+            logger.info('===== Example ends =====\n')
 
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:
             self._past = outputs[self.args.past_index]
 
-        if labels is not None:
-            unwrapped_model = unwrap_model(model)
-            if _is_peft_model(unwrapped_model):
-                model_name = unwrapped_model.base_model.model._get_name()
-            else:
-                model_name = unwrapped_model._get_name()
-            if model_name in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.values():
-                loss = self.label_smoother(outputs, labels, shift_labels=True)
-            else:
-                loss = self.label_smoother(outputs, labels)
-        else:
-            if isinstance(outputs, dict) and "loss" not in outputs:
-                raise ValueError(
-                    "The model did not return a loss from the inputs, only the following keys: "
-                    f"{','.join(outputs.keys())}. For reference, the inputs it received are {','.join(inputs.keys())}."
-                )
-            # We don't use .loss here since the model may return tuples instead of ModelOutput.
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        # We don't use .loss here since the model may return tuples instead of ModelOutput.
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
         if self.state.global_step % 10 == 0:
             logger.info(f"loss: {outputs['loss'].item()} | acc: {outputs['acc']}")
             self.log({"loss": outputs['loss'].item(), "acc": outputs['acc'].item()})
             if outputs.get('logs', None):
                 for k, v in outputs['logs'].items():
-                    logger.info(f"{k}: {v.item()}")
                     self.log({f"{k}": v.item()})
 
         return (loss, outputs) if return_outputs else loss
 
     def _save(self, output_dir=None, **kwargs):
-        """ Discard the original argument of `state_dict`, since it's from entire wrapped model.
-        """
+        """ Discard the original argument of `state_dict`, since it's from entire wrapped model.  """
         # If we are executing this function, we are the process zero, so we don't check for that.
         output_dir = output_dir if output_dir is not None else self.args.output_dir
         os.makedirs(output_dir, exist_ok=True)
@@ -281,7 +238,9 @@ class Trainer(hf_trainer):
         self.model.encoder.save_pretrained(
             output_dir, state_dict=model.state_dict(), safe_serialization=self.args.save_safetensors
         )
-        # if self.tokenizer is not None:
-        #     self.tokenizer.save_pretrained(output_dir)
         # Good practice: save your training arguments together with the trained model
         torch.save(self.args, os.path.join(output_dir, 'training_args.bin'))
+
+    def log(self, logs) -> None:
+        logs["learning_rate"] = self._get_learning_rate()
+        super().log(logs)
