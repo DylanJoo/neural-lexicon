@@ -17,12 +17,12 @@ index_dir=${HOME}/indexes/beir
 data_dir=${HOME}/datasets/beir
 # Setting of encoders
 backbone=contriever
-exp=span-ctx-hn
+exp=span-hn
 
 for dataset in trec-covid nfcorpus fiqa arguana webis-touche2020 quora scidocs scifact;do
 
     # Go
-    for ckpt in 500 1000 1500;do
+    for ckpt in 250 500 750 1000;do
 
         encoder=models/ckpt/${backbone}-${exp}/${dataset}/checkpoint-${ckpt}
 

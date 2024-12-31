@@ -30,8 +30,7 @@ class NegativeSpanMiner:
         self.eos = tokenizer.eos_token_id
 
         ## precomputed negative
-        self.negative_jsonl = ""
-        self.negatives = []
+        self.negative_jsonl = None
 
         ## precomupted index. 
         ## It can be used for 
@@ -41,7 +40,9 @@ class NegativeSpanMiner:
 
         ## Negative 
         if opt.prebuilt_negative_jsonl is not None:
-            self.negatives = self._load_negatives()
+            self.negatives = {}
+            self._load_negatives()
+            assert len(self.dataset) == len(self.negatives), 'inconsistent length'
 
         ### Index (if need to rebuild)
         if opt.prebuilt_faiss_dir is not None:
@@ -69,10 +70,15 @@ class NegativeSpanMiner:
                     idx = len(self.negatives)
 
                 negatives = item['negatives']
-                self.negatives[int(idx)] = negatives
+                self.negatives[idx] = negatives
 
     ## [static mining]
-    def batch_get_negative_inputs(self, indices, field='span_tokens'):
+    def batch_get_negative_inputs(
+        self, 
+        indices, 
+        n=1,
+        to_return='span_tokens'
+    ):
         indices_to_return = []
         tokens_to_return = []
 
@@ -80,11 +86,11 @@ class NegativeSpanMiner:
         for idx in indices:
             candidates = self.negatives[int(idx)]
             if len(candidates) > 0:
-                negative_idx = random.sample(candidates, 1)
+                negative_idx = random.sample(candidates, n)
                 if negative_idx not in indices + indices_to_return:
                     indices_to_return.append(negative_idx[0])
 
-        return self.prepare_input(indices_to_return, field)
+        return self.prepare_input(indices_to_return, to_return)
 
     ## [static mining]
     def precompute_prior_negatives(
@@ -124,12 +130,12 @@ class NegativeSpanMiner:
                         indices=[], # will do during the training batch
                         n=n_samples, k0=0, k=top_k,
                         exclude_overlap=False, 
-                        to_return='span', 
                         return_indices=True
                 )
                 for negative in negatives:
                     negative_writer.write(json.dumps({"negatives": negative})+'\n')
 
+    ## [mining on-the-fly]
     def crop_depedent_from_docs(
         self, 
         embeds_1, 
@@ -137,7 +143,7 @@ class NegativeSpanMiner:
         indices,
         n=1, k0=0, k=100, 
         exclude_overlap=True,
-        to_return='span',
+        to_return='span_tokens',
         return_indices=False,
     ):
         """
@@ -207,7 +213,7 @@ class NegativeSpanMiner:
             return batch_docidx
         else:
             batch_docidx = [x for xs in batch_docidx for x in xs]
-            return self.prepare_input(batch_docidx, 'span_tokens')
+            return self.prepare_input(batch_docidx, to_return)
 
     def prepare_input(self, batch_docidx, field=None):
         batch_token_ids = []

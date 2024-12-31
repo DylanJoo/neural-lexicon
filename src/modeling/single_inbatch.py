@@ -80,16 +80,22 @@ class InBatchInteraction(nn.Module):
 
         ## [st-st]
         if self.miner is not None:
-            # mine online
-            neg_inputs = self.miner.crop_depedent_from_docs(
-                    embeds_1=qemb.clone().detach().cpu(), 
-                    embeds_2=cemb.clone().detach().cpu(),
-                    indices=data_index,
-                    n=self.n_negative_samples, k0=0, k=100, 
-                    exclude_overlap=False,
-                    to_return='span',
-            )
-            # neg_inputs = self.miner.get_prior_negatives(data_index)
+            if self.miner.negative_jsonl is not None:
+                # use prebuilt negatives
+                neg_inputs = self.miner.batch_get_negative_inputs(
+                        data_index,
+                        n=self.n_negative_samples
+                )
+            else:
+                # mine online
+                neg_inputs = self.miner.crop_depedent_from_docs(
+                        embeds_1=qemb.clone().detach().cpu(), 
+                        embeds_2=cemb.clone().detach().cpu(),
+                        indices=data_index,
+                        n=self.n_negative_samples, k0=0, k=100, 
+                        exclude_overlap=False,
+                        to_return='spans_tokens',
+                )
             neg_vectors = self.encoder(
                     input_ids=neg_inputs[0].to(self.encoder.device),
                     attention_mask=neg_inputs[1].to(self.encoder.device)

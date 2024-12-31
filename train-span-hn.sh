@@ -1,8 +1,8 @@
 #!/bin/sh
-#SBATCH --job-name=train.exp1
+#SBATCH --job-name=train.exp2
 #SBATCH --partition gpu
-#SBATCH --gres=gpu:tesla_p40:2
-#SBATCH --mem=32G
+#SBATCH --gres=gpu:nvidia_rtx_a6000:4
+#SBATCH --mem=120G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --time=12:00:00
@@ -21,21 +21,21 @@ exp=span-hn
 span_jsonl=spans_tokenized.jsonl
 # span_jsonl=spans_tokenized.gte.jsonl
 
-exp=span-ctx-hn
-span_jsonl=ctx_spans_tokenized.jsonl
+# exp=span-ctx-hn
+# span_jsonl=ctx_spans_tokenized.jsonl
 
 for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020 quora;do
 # for dataset in scidocs scifact;do
 
     # Go
-    torchrun --nproc_per_node 2 \
+    torchrun --nproc_per_node 4 \
         train.py \
         --model_name ${ckpt} \
         --corpus_jsonl ${data_dir}/${dataset}/collection_tokenized/corpus_tokenized.jsonl \
         --corpus_spans_jsonl ${data_dir}/${dataset}/collection_tokenized/${span_jsonl} \
         --select_span_mode weighted \
         --output_dir models/ckpt/${backbone}-${exp}/${dataset} \
-        --per_device_train_batch_size 32 \
+        --per_device_train_batch_size 256 \
         --temperature 0.1 --temperature_span 0.1 \
         --pooling mean --span_pooling mean \
         --alpha 1.0 --beta 1.0 --gamma 0.0 \
@@ -46,9 +46,10 @@ for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020
         --n_negative_samples 1 \
         --mine_neg_using crops \
         --prebuilt_faiss_dir ${index_dir}-neg/${dataset} \
+        --prebuilt_negative_jsonl ${data_dir}/${dataset}/collection_tokenized/negative_docidx.jsonl \
         --save_strategy steps \
         --max_steps 1000 \
-        --save_steps 500 \
+        --save_steps 250 \
         --save_total_limit 4 \
         --fp16 --wandb_project exp1-single-dr  \
         --report_to wandb --run_name ${dataset}-${exp}
