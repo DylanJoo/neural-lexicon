@@ -7,7 +7,7 @@ import json
 from tqdm import tqdm
 import numpy as np
 from dataclasses import dataclass
-from pyserini.search import FaissSearcher
+from pyserini.search.faiss import FaissSearcher
 from .utils import batch_iterator, argdiff
 from .data_utils import add_bos_eos, build_mask
 

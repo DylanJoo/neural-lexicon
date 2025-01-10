@@ -66,7 +66,7 @@ def main():
 
     # [Training] the first training round. 0<T<t0.5
     if train_opt.resume_from_checkpoint is None:
-        trainer.train(resume_from_checkpoint=None)
+        trainer.train()
     else:
         # [Training] testing another loop
         if 'true' in train_opt.resume_from_checkpoint.lower():

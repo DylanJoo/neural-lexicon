@@ -10,10 +10,9 @@
 
 # Set-up the environment.
 source ${HOME}/.bashrc
-conda activate exa-dm_env
+conda activate ledr
 
 # Start the experiment.
-index_dir=${HOME}/indexes/beir
 data_dir=${HOME}/datasets/beir
 backbone=contriever
 ckpt=facebook/contriever
@@ -53,28 +52,3 @@ for dataset in scidocs scifact trec-covid nfcorpus fiqa arguana webis-touche2020
         --fp16 --wandb_project exp1-single-dr  \
         --report_to wandb --run_name ${dataset}-${exp}
 done
-
-# index_dir=${HOME}/indexes/lotte
-# data_dir=${HOME}/datasets/lotte
-# # lotte
-# for dataset in lifestyle recreation technology writing;do
-#
-#     # Go
-#     torchrun --nproc_per_node 2 \
-#         train.py \
-#         --model_name ${ckpt} \
-#         --corpus_jsonl ${data_dir}/${dataset}/test/collection_tokenized/docs00.json \
-#         --output_dir models/ckpt/${backbone}-${exp}/lotte-${dataset} \
-#         --per_device_train_batch_size 32 \
-#         --temperature 0.1 --temperature_span 0.1 \
-#         --pooling mean --span_pooling no \
-#         --alpha 1.0 --beta 0.0 --gamma 0.0 \
-#         --chunk_length 256 \
-#         --save_strategy steps \
-#         --max_steps 2000 \
-#         --save_steps 500 \
-#         --save_total_limit 4 \
-#         --warmup_ratio 0.1 \
-#         --fp16 --wandb_project exp1-single-dr  \
-#         --report_to wandb --run_name ${dataset}-${exp}
-# done

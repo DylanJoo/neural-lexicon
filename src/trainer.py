@@ -15,7 +15,6 @@ class Trainer(hf_trainer):
         super().__init__(*args, **kwargs)
         self.is_ddp = dist.is_initialized()
         self._dist_loss_scale_factor = dist.get_world_size() if self.is_ddp else 1
-        self.curret_epoch = 0
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
         self.model.encoder.from_pretrained(resume_from_checkpoint)
@@ -230,7 +229,10 @@ class Trainer(hf_trainer):
     def _save(self, output_dir=None, **kwargs):
         """ Discard the original argument of `state_dict`, since it's from entire wrapped model.  """
         # If we are executing this function, we are the process zero, so we don't check for that.
+        # output_dir = output_dir if output_dir is not None else self.args.output_dir # log at step
+        current_epoch = round(self.state.epoch)
         output_dir = output_dir if output_dir is not None else self.args.output_dir
+        # output_dir = output_dir.rsplit('checkpoint-')[0] + f"epoch-{str(current_epoch)}"
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}. The model checkpoint is an encoder for huggingface, not a wrapping model.")
 

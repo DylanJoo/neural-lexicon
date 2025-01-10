@@ -114,7 +114,7 @@ class InBatchInteraction(nn.Module):
 
         ## computing losses
         CELoss = nn.CrossEntropyLoss()
-        KLLoss = nn.KLDivLoss(reduction='batchmean')
+        KLLoss = nn.KLDivLoss(reduction='none')
         MSELoss = nn.MSELoss()
 
         logs = {}
@@ -155,9 +155,9 @@ class InBatchInteraction(nn.Module):
             logs.update({'loss_span': loss_sp, 'acc_span': accuracy_sp})
 
             ## [sp-sp]
-            target = F.softmax(scores_qsp, dim=1)
-            logits_spans = F.log_softmax(scores_csp, dim=1)
-            loss_distil = KLLoss(logits_spans, target)
+            student = F.log_softmax(scores_qsp, dim=1)
+            teacher = F.softmax(scores_csp, dim=1)
+            loss_distil = KLLoss(student, teacher).sum(dim=1).mean(dim=0)
             logs.update({'loss_span_distil': loss_distil})
 
         logs.update(self.encoder.additional_log)

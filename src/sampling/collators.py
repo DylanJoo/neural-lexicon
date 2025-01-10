@@ -35,5 +35,4 @@ class Collator(object):
             batch["d_tokens"] = d_tokens
             batch["d_mask"] = d_mask
 
-        return batch
-
+        return dict(batch)
